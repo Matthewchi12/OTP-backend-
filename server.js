@@ -37,8 +37,8 @@ const countries = [
 
 if (MONGODB_URI) {
   mongoose.connect(MONGODB_URI)
- .then(() => console.log("✅ MongoDB Connected"))
- .catch(e => console.log("❌ Mongo Error:", e.message));
+.then(() => console.log("✅ MongoDB Connected"))
+.catch(e => console.log("❌ Mongo Error:", e.message));
 }
 
 const UserSchema = new mongoose.Schema({
@@ -112,7 +112,7 @@ app.post("/api/auth/login", async (req, res) => {
   } catch(e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// ===== BUY - NO DEMO - RETURNS "Number is unavailable" WHEN FAILS =====
+// ===== BUY - FIXED WITH INSUFFICIENT BALANCE MESSAGE =====
 app.post("/api/orders", authMiddleware, async (req, res) => {
   try {
     const { country, service } = req.body;
@@ -125,7 +125,10 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
 
     const price = selectedCountry.price;
     const userBalances = req.user.balances || getDefaultBalances();
-    if ((userBalances[country] || 0) < price) return res.status(400).json({ success: false, message: "Insufficient balance" });
+    // ✅ ADDED: Check if balance less than product amount - returns your exact message
+    if ((userBalances[country] || 0) < price) {
+      return res.status(400).json({ success: false, message: "insufficient balance add money" });
+    }
 
     // Buy REAL number
     let realPhone = null;

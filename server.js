@@ -1,424 +1,243 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const path = require("path");
 
 dotenv.config();
-
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-/*
-|--------------------------------------------------------------------------
-| Demo data
-|--------------------------------------------------------------------------
-*/
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
+const JWT_EXPIRES = process.env.JWT_EXPIRES || "7d";
 
 const countries = [
-  {
-    code: "nigeria",
-    name: "Nigeria",
-    prefix: "+234",
-    currency: "NGN",
-    price: 1000
-  },
-  {
-    code: "usa",
-    name: "USA",
-    prefix: "+1",
-    currency: "USD",
-    price: 1
-  },
-  {
-    code: "uk",
-    name: "UK",
-    prefix: "+44",
-    currency: "GBP",
-    price: 0.80
-  },
-  {
-    code: "ghana",
-    name: "Ghana",
-    prefix: "+233",
-    currency: "GHS",
-    price: 12
-  },
-  {
-    code: "kenya",
-    name: "Kenya",
-    prefix: "+254",
-    currency: "KES",
-    price: 130
-  },
-  {
-    code: "india",
-    name: "India",
-    prefix: "+91",
-    currency: "INR",
-    price: 70
-  }
+  { code: "nigeria", name: "Nigeria", prefix: "+234", currency: "NGN", price: 1000, topups: [5000, 10000, 20000] },
+  { code: "usa", name: "USA", prefix: "+1", currency: "USD", price: 1, topups: [5, 10, 20] },
+  { code: "uk", name: "UK", prefix: "+44", currency: "GBP", price: 0.80, topups: [5, 10, 15] },
+  { code: "ghana", name: "Ghana", prefix: "+233", currency: "GHS", price: 12, topups: [60, 120, 240] },
+  { code: "kenya", name: "Kenya", prefix: "+254", currency: "KES", price: 130, topups: [650, 1300, 2600] },
+  { code: "india", name: "India", prefix: "+91", currency: "INR", price: 70, topups: [350, 700, 1400] },
 ];
 
-/*
-|--------------------------------------------------------------------------
-| Temporary in-memory users
-|--------------------------------------------------------------------------
-| For production, replace this with PostgreSQL/Supabase/MongoDB.
-|--------------------------------------------------------------------------
-*/
+// In-memory DB - replace with real DB in production
+const usersById = new Map(); // id -> user
+const usersByEmail = new Map(); // email -> user
+const orders = new Map(); // orderId -> order
 
-const users = new Map();
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+}
+function generateToken(user) {
+  return jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+}
+function authMiddleware(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header ||!header.startsWith("Bearer ")) {
+    return res.status(401).json({ success: false, message: "No token provided" });
+  }
+  try {
+    const token = header.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = usersById.get(decoded.id);
+    if (!user) return res.status(401).json({ success: false, message: "User not found" });
+    req.user = user;
+    next();
+  } catch (e) {
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
+  }
+}
+function getDefaultBalances() {
+  const balances = {};
+  countries.forEach(c => balances[c.code] = c.topups[1]);
+  return balances;
+}
 
-const orders = new Map();
-
-/*
-|--------------------------------------------------------------------------
-| Health check
-|--------------------------------------------------------------------------
-*/
-
+// Health
 app.get("/api/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "OTPHub server is running",
-    time: new Date().toISOString()
-  });
+  res.json({ success: true, message: "OTPHub server running", time: new Date().toISOString() });
 });
-
-/*
-|--------------------------------------------------------------------------
-| Get countries
-|--------------------------------------------------------------------------
-*/
 
 app.get("/api/countries", (req, res) => {
-  res.json({
-    success: true,
-    countries
-  });
+  res.json({ success: true, countries });
 });
 
 /*
 |--------------------------------------------------------------------------
-| Create demo user
+| AUTH - CREATE ACCOUNT + LOGIN
 |--------------------------------------------------------------------------
 */
-
-app.post("/api/users", (req, res) => {
-  const { userId } = req.body;
-
-  if (!userId) {
-    return res.status(400).json({
-      success: false,
-      message: "userId is required"
-    });
-  }
-
-  if (!users.has(userId)) {
-    users.set(userId, {
-      id: userId,
-      balance: 0,
-      createdAt: new Date()
-    });
-  }
-
-  res.json({
-    success: true,
-    user: users.get(userId)
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| Get wallet
-|--------------------------------------------------------------------------
-*/
-
-app.get("/api/wallet/:userId", (req, res) => {
-  const user = users.get(req.params.userId);
-
-  if (!user) {
-    return res.status(404).json({
-      success: false,
-      message: "User not found"
-    });
-  }
-
-  res.json({
-    success: true,
-    balance: user.balance
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| Add wallet balance
-|--------------------------------------------------------------------------
-|
-| IMPORTANT:
-| This is DEMO top-up logic.
-| In production, only credit wallet after Paystack/
-| Flutterwave/Stripe confirms the payment on the server.
-|--------------------------------------------------------------------------
-*/
-
-app.post("/api/wallet/topup", (req, res) => {
-  const { userId, amount } = req.body;
-
-  if (!userId || !amount || amount <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid top-up"
-    });
-  }
-
-  const user = users.get(userId);
-
-  if (!user) {
-    return res.status(404).json({
-      success: false,
-      message: "User not found"
-    });
-  }
-
-  user.balance += Number(amount);
-
-  res.json({
-    success: true,
-    balance: user.balance
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| Buy number
-|--------------------------------------------------------------------------
-*/
-
-app.post("/api/orders", async (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   try {
+    const { email, password } = req.body;
+    if (!email ||!password) return res.status(400).json({ success: false, message: "Email and password required" });
 
-    const {
-      userId,
-      country,
-      service
-    } = req.body;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, message: "Invalid email" });
+    if (password.length < 6) return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
 
-    if (!userId || !country || !service) {
-      return res.status(400).json({
-        success: false,
-        message: "userId, country and service are required"
-      });
-    }
+    if (usersByEmail.has(cleanEmail)) return res.status(409).json({ success: false, message: "Email already registered" });
 
-    const user = users.get(userId);
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = {
+      id: generateId(),
+      email: cleanEmail,
+      passwordHash,
+      balances: getDefaultBalances(),
+      createdAt: new Date()
+    };
+    usersById.set(user.id, user);
+    usersByEmail.set(cleanEmail, user);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
+    const token = generateToken(user);
+    res.status(201).json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email, balances: user.balances }
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
-    const selectedCountry = countries.find(
-      c => c.code === country
-    );
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email ||!password) return res.status(400).json({ success: false, message: "Email and password required" });
 
-    if (!selectedCountry) {
-      return res.status(400).json({
-        success: false,
-        message: "Country not supported"
-      });
-    }
+    const cleanEmail = email.trim().toLowerCase();
+    const user = usersByEmail.get(cleanEmail);
+    if (!user) return res.status(401).json({ success: false, message: "Invalid email or password" });
+
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match) return res.status(401).json({ success: false, message: "Invalid email or password" });
+
+    const token = generateToken(user);
+    res.json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email, balances: user.balances }
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+app.get("/api/me", authMiddleware, (req, res) => {
+  res.json({ success: true, user: { id: req.user.id, email: req.user.email, balances: req.user.balances } });
+});
+
+/*
+|--------------------------------------------------------------------------
+| WALLET - now protected and per-country
+|--------------------------------------------------------------------------
+*/
+app.get("/api/wallet", authMiddleware, (req, res) => {
+  res.json({ success: true, balances: req.user.balances });
+});
+
+// Keep old route for backwards compatibility
+app.get("/api/wallet/:userId", (req, res) => {
+  const user = usersById.get(req.params.userId);
+  if (!user) return res.status(404).json({ success: false, message: "User not found" });
+  res.json({ success: true, balances: user.balances, balance: user.balances[req.query.country || "nigeria"] || 0 });
+});
+
+app.post("/api/wallet/topup", authMiddleware, (req, res) => {
+  const { country, amount, userId } = req.body; // userId kept for old frontend
+
+  // Support both new and old
+  const targetCountry = country || "nigeria";
+  const topupAmount = Number(amount);
+
+  if (!topupAmount || topupAmount <= 0) return res.status(400).json({ success: false, message: "Invalid amount" });
+  if (!countries.find(c => c.code === targetCountry)) return res.status(400).json({ success: false, message: "Invalid country" });
+
+  const user = req.user || usersById.get(userId);
+  if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+  user.balances[targetCountry] = (user.balances[targetCountry] || 0) + topupAmount;
+
+  res.json({ success: true, balances: user.balances, balance: user.balances[targetCountry] });
+});
+
+/*
+|--------------------------------------------------------------------------
+| ORDERS
+|--------------------------------------------------------------------------
+*/
+app.post("/api/orders", authMiddleware, (req, res) => {
+  try {
+    const { country, service } = req.body;
+    if (!country ||!service) return res.status(400).json({ success: false, message: "country and service required" });
+
+    const selectedCountry = countries.find(c => c.code === country);
+    if (!selectedCountry) return res.status(400).json({ success: false, message: "Country not supported" });
 
     const price = selectedCountry.price;
-
-    if (user.balance < price) {
-      return res.status(400).json({
-        success: false,
-        message: "Insufficient balance",
-        required: price,
-        balance: user.balance
-      });
+    if ((req.user.balances[country] || 0) < price) {
+      return res.status(400).json({ success: false, message: "Insufficient balance", required: price, balance: req.user.balances[country] || 0 });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | In production:
-    |
-    | 1. Call your legitimate SMS provider here.
-    | 2. Request a number.
-    | 3. Save provider order ID.
-    | 4. Return the real phone number.
-    |--------------------------------------------------------------------------
-    */
+    req.user.balances[country] -= price;
 
-    user.balance -= price;
-
-    const orderId =
-      "ORD-" +
-      Date.now() +
-      "-" +
-      Math.floor(Math.random() * 10000);
-
-    const demoNumber =
-      selectedCountry.prefix +
-      " " +
-      Math.floor(
-        7000000000 +
-        Math.random() * 999999999
-      );
+    const orderId = "ORD-" + Date.now() + "-" + Math.floor(Math.random() * 10000);
+    const demoNumber = selectedCountry.prefix + Math.floor(7000000000 + Math.random() * 999999999).toString().slice(0,10);
 
     const order = {
       id: orderId,
-      userId,
-      country,
-      service,
-      phone: demoNumber,
-      price,
-      status: "waiting",
-      otp: null,
-      createdAt: new Date()
+      userId: req.user.id,
+      country, service, phone: demoNumber, price,
+      status: "waiting", otp: null, createdAt: new Date(), expiresAt: new Date(Date.now() + 15*60*1000)
     };
-
     orders.set(orderId, order);
 
-    /*
-    |--------------------------------------------------------------------------
-    | DEMO ONLY
-    |--------------------------------------------------------------------------
-    */
-
+    // DEMO OTP after 6s
     setTimeout(() => {
-
-      const currentOrder = orders.get(orderId);
-
-      if (!currentOrder) return;
-
-      currentOrder.otp =
-        Math.floor(
-          100000 +
-          Math.random() * 900000
-        ).toString();
-
-      currentOrder.status = "received";
-
+      const o = orders.get(orderId);
+      if (!o) return;
+      o.otp = Math.floor(100000 + Math.random() * 900000).toString();
+      o.status = "received";
     }, 6000);
 
     res.json({
       success: true,
-      order: {
-        id: order.id,
-        phone: order.phone,
-        service: order.service,
-        status: order.status,
-        price: order.price
-      },
-
-      balance: user.balance
+      order: { id: order.id, phone: order.phone, service: order.service, status: order.status, price: order.price },
+      balances: req.user.balances,
+      balance: req.user.balances[country]
     });
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
-
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-/*
-|--------------------------------------------------------------------------
-| Check order / OTP
-|--------------------------------------------------------------------------
-*/
-
-app.get("/api/orders/:orderId", (req, res) => {
-
-  const order = orders.get(req.params.orderId);
-
-  if (!order) {
-    return res.status(404).json({
-      success: false,
-      message: "Order not found"
-    });
-  }
-
-  res.json({
-    success: true,
-    order
-  });
-
+app.get("/api/orders", authMiddleware, (req, res) => {
+  const userOrders = Array.from(orders.values()).filter(o => o.userId === req.user.id).sort((a,b)=>b.createdAt-a.createdAt);
+  res.json({ success: true, orders: userOrders });
 });
 
-/*
-|--------------------------------------------------------------------------
-| Cancel order
-|--------------------------------------------------------------------------
-*/
-
-app.delete("/api/orders/:orderId", (req, res) => {
-
+app.get("/api/orders/:orderId", authMiddleware, (req, res) => {
   const order = orders.get(req.params.orderId);
+  if (!order || order.userId!== req.user.id) return res.status(404).json({ success: false, message: "Order not found" });
+  res.json({ success: true, order });
+});
 
-  if (!order) {
-    return res.status(404).json({
-      success: false,
-      message: "Order not found"
-    });
-  }
-
+app.delete("/api/orders/:orderId", authMiddleware, (req, res) => {
+  const order = orders.get(req.params.orderId);
+  if (!order || order.userId!== req.user.id) return res.status(404).json({ success: false, message: "Order not found" });
   order.status = "cancelled";
-
-  res.json({
-    success: true,
-    message: "Order cancelled"
-  });
-
+  res.json({ success: true, message: "Order cancelled" });
 });
-
-/*
-|--------------------------------------------------------------------------
-| Serve frontend
-|--------------------------------------------------------------------------
-*/
 
 app.use(express.static(path.join(__dirname, "../public")));
 
-/*
-|--------------------------------------------------------------------------
-| Start server
-|--------------------------------------------------------------------------
-*/
-
-const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-
-  console.log(`
-================================
-       OTPHub SERVER
-================================
-
-Server running on:
-http://localhost:${PORT}
-
-API:
-GET    /api/health
-GET    /api/countries
-POST   /api/users
-GET    /api/wallet/:userId
-POST   /api/wallet/topup
-POST   /api/orders
-GET    /api/orders/:orderId
-DELETE /api/orders/:orderId
-
-================================
-  `);
-
+  console.log(`OTPHub Auth Server running on http://localhost:${PORT}`);
 });

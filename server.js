@@ -218,5 +218,24 @@ app.get("/api/admin/stats", async (req, res) => {
     res.json({ success: true, stats: { totalUsers, totalOrders, totalRevenue, mode: FIVESIM_KEY? "REAL API" : "DEMO MODE", mongo: mongoose.connection.readyState === 1 } });
   } catch(e) { res.status(500).json({ success: false, message: e.message }); }
 });
+// PAYSTACK
+app.post('/api/pay/initialize', async (req, res) => {
+  const { email, amount } = req.body;
+  const r = await fetch('https://api.paystack.co/transaction/initialize', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, amount: amount * 100, callback_url: 'https://matthewchi12.github.io/payment-success.html' })
+  });
+  const data = await r.json();
+  res.json(data);
+});
+
+app.get('/api/pay/verify/:reference', async (req, res) => {
+  const r = await fetch(`https://api.paystack.co/transaction/verify/${req.params.reference}`, {
+    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
+  });
+  const data = await r.json();
+  res.json(data);
+});
 
 app.listen(PORT, () => console.log(`OTPHub Server running with ${FIVESIM_KEY? 'REAL API' : 'DEMO MODE'} + MongoDB on ${PORT}`));

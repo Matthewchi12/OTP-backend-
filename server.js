@@ -219,12 +219,26 @@ app.get("/api/admin/stats", async (req, res) => {
   } catch(e) { res.status(500).json({ success: false, message: e.message }); }
 });
 // PAYSTACK
+ 
+
+app.get('/api/pay/verify/:reference', async (req, res) => {
+  const r = await fetch(`https://api.paystack.co/transaction/verify/${req.params.reference}`, {
+    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
+  });
+  const data = await r.json();
+  res.json(data);
+});// ===== AUTO PAYSTACK - CREDIT WALLET - FINAL =====
 app.post('/api/pay/initialize', async (req, res) => {
   const { email, amount } = req.body;
   const r = await fetch('https://api.paystack.co/transaction/initialize', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, amount: amount * 100, callback_url: 'https://matthewchi12.github.io/payment-success.html' })
+    body: JSON.stringify({ 
+      email, 
+      amount: amount * 100, 
+      callback_url: 'https://matthewchi12.github.io/payment-success.html',
+      metadata: { user_email: email }
+    })
   });
   const data = await r.json();
   res.json(data);
@@ -235,7 +249,32 @@ app.get('/api/pay/verify/:reference', async (req, res) => {
     headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
   });
   const data = await r.json();
+  
+  if(data.data && data.data.status === 'success'){
+    const paidEmail = data.data.customer.email.toLowerCase();
+    const paidAmount = data.data.amount / 100;
+    try{
+      const User = mongoose.model('User'); // works even if User defined in same file
+      await User.findOneAndUpdate({ email: paidEmail }, { $inc: { balance: paidAmount } });
+      console.log(`✅ CREDITED ${paidEmail} ₦${paidAmount}`);
+    }catch(e){ console.log("Credit error", e.message); }
+  }
   res.json(data);
+});
+
+// WEBHOOK - auto credit even if user closes browser
+app.post('/api/pay/webhook', async (req, res) => {
+  const event = req.body;
+  if(event.event === 'charge.success'){
+    const email = event.data.customer.email.toLowerCase();
+    const amount = event.data.amount / 100;
+    try{
+      const User = mongoose.model('User');
+      await User.findOneAndUpdate({ email: email }, { $inc: { balance: amount } });
+      console.log(`✅ WEBHOOK CREDITED ${email} ₦${amount}`);
+    }catch(e){}
+  }
+  res.sendStatus(200);
 });
 
 app.listen(PORT, () => console.log(`OTPHub Server running with ${FIVESIM_KEY? 'REAL API' : 'DEMO MODE'} + MongoDB on ${PORT}`));

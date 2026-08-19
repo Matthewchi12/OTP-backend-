@@ -37,8 +37,8 @@ const countries = [
 
 if (MONGODB_URI) {
   mongoose.connect(MONGODB_URI)
-   .then(() => console.log("✅ MongoDB Connected - Users will NEVER delete again"))
-   .catch(e => console.log("❌ Mongo Error:", e.message));
+  .then(() => console.log("✅ MongoDB Connected - Users will NEVER delete again"))
+  .catch(e => console.log("❌ Mongo Error:", e.message));
 }
 
 const UserSchema = new mongoose.Schema({
@@ -151,7 +151,7 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
     const price = selectedCountry.price;
     const userBalances = req.user.balances || getDefaultBalances();
     if ((userBalances[country] || 0) < price) return res.status(400).json({ success: false, message: "Insufficient balance" });
-    userBalances[country] -= price; req.user.balances = userBalances; await req.user.save();
+    userBalances[country] -= price; req.user.balances = userBalances; req.user.markModified('balances'); await req.user.save();
     let realPhone = null; let fiveSimId = null;
     if (FIVESIM_KEY) {
       try {
@@ -218,62 +218,67 @@ app.get("/api/admin/stats", async (req, res) => {
     res.json({ success: true, stats: { totalUsers, totalOrders, totalRevenue, mode: FIVESIM_KEY? "REAL API" : "DEMO MODE", mongo: mongoose.connection.readyState === 1 } });
   } catch(e) { res.status(500).json({ success: false, message: e.message }); }
 });
-// PAYSTACK
- 
 
-app.get('/api/pay/verify/:reference', async (req, res) => {
-  const r = await fetch(`https://api.paystack.co/transaction/verify/${req.params.reference}`, {
-    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
-  });
-  const data = await r.json();
-  res.json(data);
-});// ===== AUTO PAYSTACK - CREDIT WALLET - FINAL =====
+// ===== PAYSTACK - AUTO CREDIT WALLET - FIXED =====
 app.post('/api/pay/initialize', async (req, res) => {
-  const { email, amount } = req.body;
-  const r = await fetch('https://api.paystack.co/transaction/initialize', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      email, 
-      amount: amount * 100, 
-      callback_url: 'https://matthewchi12.github.io/payment-success.html',
-      metadata: { user_email: email }
-    })
-  });
-  const data = await r.json();
-  res.json(data);
+  try{
+    const { email, amount } = req.body;
+    if(!email ||!amount) return res.json({ success: false, message: "email and amount required" });
+    const r = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        amount: Math.round(Number(amount) * 100),
+        callback_url: 'https://matthewchi12.github.io/payment-success.html',
+        metadata: { user_email: email }
+      })
+    });
+    const data = await r.json();
+    res.json(data);
+  }catch(e){ res.json({ success: false, message: e.message }); }
 });
 
 app.get('/api/pay/verify/:reference', async (req, res) => {
-  const r = await fetch(`https://api.paystack.co/transaction/verify/${req.params.reference}`, {
-    headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
-  });
-  const data = await r.json();
-  
-  if(data.data && data.data.status === 'success'){
-    const paidEmail = data.data.customer.email.toLowerCase();
-    const paidAmount = data.data.amount / 100;
-    try{
-      const User = mongoose.model('User'); // works even if User defined in same file
-      await User.findOneAndUpdate({ email: paidEmail }, { $inc: { balance: paidAmount } });
-      console.log(`✅ CREDITED ${paidEmail} ₦${paidAmount}`);
-    }catch(e){ console.log("Credit error", e.message); }
-  }
-  res.json(data);
+  try{
+    const r = await fetch(`https://api.paystack.co/transaction/verify/${req.params.reference}`, {
+      headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
+    });
+    const data = await r.json();
+
+    if(data.data && data.data.status === 'success'){
+      const paidEmail = data.data.customer.email.toLowerCase();
+      const paidAmount = data.data.amount / 100;
+      // CREDIT TO NIGERIA WALLET
+      const user = await User.findOne({ email: paidEmail });
+      if(user){
+        user.balances = user.balances || {};
+        user.balances.nigeria = (user.balances.nigeria || 0) + paidAmount;
+        user.markModified('balances');
+        await user.save();
+        console.log(`✅ CREDITED ${paidEmail} ₦${paidAmount} -> Nigeria wallet now ${user.balances.nigeria}`);
+      }
+    }
+    res.json(data);
+  }catch(e){ res.json({ success: false, message: e.message }); }
 });
 
-// WEBHOOK - auto credit even if user closes browser
 app.post('/api/pay/webhook', async (req, res) => {
-  const event = req.body;
-  if(event.event === 'charge.success'){
-    const email = event.data.customer.email.toLowerCase();
-    const amount = event.data.amount / 100;
-    try{
-      const User = mongoose.model('User');
-      await User.findOneAndUpdate({ email: email }, { $inc: { balance: amount } });
-      console.log(`✅ WEBHOOK CREDITED ${email} ₦${amount}`);
-    }catch(e){}
-  }
+  try{
+    const event = req.body;
+    if(event.event === 'charge.success'){
+      const email = event.data.customer.email.toLowerCase();
+      const amount = event.data.amount / 100;
+      const user = await User.findOne({ email });
+      if(user){
+        user.balances = user.balances || {};
+        user.balances.nigeria = (user.balances.nigeria || 0) + amount;
+        user.markModified('balances');
+        await user.save();
+        console.log(`✅ WEBHOOK CREDITED ${email} ₦${amount}`);
+      }
+    }
+  }catch(e){ console.log("Webhook error", e.message); }
   res.sendStatus(200);
 });
 

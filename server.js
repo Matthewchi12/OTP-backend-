@@ -32,7 +32,6 @@ const countries = [
   { code: "australia", name: "Australia", prefix: "+61", currency: "AUD", price: 1.5, topups: [7, 15, 30], fivesim: "australia" },
   { code: "brazil", name: "Brazil", prefix: "+55", currency: "BRL", price: 5, topups: [25, 50, 100], fivesim: "brazil" },
   { code: "mexico", name: "Mexico", prefix: "+52", currency: "MXN", price: 18, topups: [90, 180, 360], fivesim: "mexico" },
-  //... add remaining 35 same pattern
   { code: "ghana", name: "Ghana", prefix: "+233", currency: "GHS", price: 12, topups: [60, 120, 240], fivesim: "ghana" },
 ];
 
@@ -63,7 +62,7 @@ app.post("/api/auth/register", async (req, res) => {
   const cleanEmail = email.trim().toLowerCase();
   if (usersByEmail.has(cleanEmail)) return res.status(409).json({ success: false, message: "Email exists" });
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = { id: generateId(), email: cleanEmail, passwordHash, balances: getDefaultBalances() };
+  const user = { id: generateId(), email: cleanEmail, passwordHash, balances: getDefaultBalances(), createdAt: new Date(), lastLogin: new Date() };
   usersById.set(user.id, user); usersByEmail.set(cleanEmail, user);
   const token = generateToken(user);
   res.status(201).json({ success: true, token, user: { id: user.id, email: user.email, balances: user.balances } });
@@ -75,11 +74,11 @@ app.post("/api/auth/login", async (req, res) => {
   if (!user) return res.status(401).json({ success: false, message: "Invalid" });
   const match = await bcrypt.compare(req.body.password, user.passwordHash);
   if (!match) return res.status(401).json({ success: false, message: "Invalid" });
+  user.lastLogin = new Date();
   const token = generateToken(user);
   res.json({ success: true, token, user: { id: user.id, email: user.email, balances: user.balances } });
 });
 
-// REAL ORDER WITH 5SIM API - DEMO OUT WHEN KEY ADDED
 app.post("/api/orders", authMiddleware, async (req, res) => {
   try {
     const { country, service } = req.body;
@@ -87,13 +86,9 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
     if (!selectedCountry) return res.status(400).json({ success: false, message: "Country not supported" });
     const price = selectedCountry.price;
     if ((req.user.balances[country] || 0) < price) return res.status(400).json({ success: false, message: "Insufficient balance" });
-
     req.user.balances[country] -= price;
-
     let realPhone = null;
     let fiveSimId = null;
-
-    // TRY REAL API IF KEY EXISTS
     if (FIVESIM_KEY) {
       try {
         const resp = await fetch(`https://5sim.net/v1/user/buy/activation/${selectedCountry.fivesim}/any/${service}`, {
@@ -106,10 +101,7 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
         }
       } catch(e) { console.log("5sim error, using demo:", e.message); }
     }
-
-    // FALLBACK DEMO IF NO KEY
     const phone = realPhone || selectedCountry.prefix + Math.floor(7000000000 + Math.random()*999999999).toString().slice(0,10);
-
     const orderId = "ORD-" + Date.now();
     const order = {
       id: orderId, userId: req.user.id, country, service, phone, fiveSimId,
@@ -117,25 +109,19 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
       createdAt: new Date(), expiresAt: new Date(Date.now() + 15*60*1000)
     };
     orders.set(orderId, order);
-
-    // DEMO OTP only if not real
     if(!realPhone){
       setTimeout(() => {
         const o = orders.get(orderId);
         if(o){ o.otp = Math.floor(100000 + Math.random()*900000).toString(); o.status = "received"; }
       }, 6000);
     }
-
     res.json({ success: true, order, balances: req.user.balances });
   } catch(e){ console.error(e); res.status(500).json({ success: false, message: "Server error" }); }
 });
 
-// CHECK ORDER - REAL OTP FROM 5SIM
 app.get("/api/orders/:orderId", authMiddleware, async (req, res) => {
   const order = orders.get(req.params.orderId);
   if (!order || order.userId!== req.user.id) return res.status(404).json({ success: false, message: "Not found" });
-
-  // If real order, check 5sim for SMS
   if (order.fiveSimId && FIVESIM_KEY &&!order.otp) {
     try {
       const resp = await fetch(`https://5sim.net/v1/user/check/${order.fiveSimId}`, {
@@ -148,8 +134,36 @@ app.get("/api/orders/:orderId", authMiddleware, async (req, res) => {
       }
     } catch(e){ console.log("check error", e.message); }
   }
-
   res.json({ success: true, order });
+});
+
+// ===================== ADMIN - SEE ALL PEOPLE THAT LOGIN =====================
+app.get("/api/admin/users", (req, res) => {
+  const allUsers = Array.from(usersById.values()).map(u => {
+    const userOrders = Array.from(orders.values()).filter(o => o.userId === u.id);
+    return {
+      id: u.id,
+      email: u.email,
+      balances: u.balances,
+      createdAt: u.createdAt || new Date(),
+      lastLogin: u.lastLogin || u.createdAt,
+      ordersCount: userOrders.length,
+      totalSpent: userOrders.reduce((sum, o) => sum + (o.price || 0), 0)
+    };
+  }).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ success: true, total: allUsers.length, users: allUsers });
+});
+
+app.get("/api/admin/orders", (req, res) => {
+  const allOrders = Array.from(orders.values()).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ success: true, total: allOrders.length, orders: allOrders });
+});
+
+app.get("/api/admin/stats", (req, res) => {
+  const totalUsers = usersById.size;
+  const totalOrders = orders.size;
+  const totalRevenue = Array.from(orders.values()).reduce((s,o)=> s + (o.price||0), 0);
+  res.json({ success: true, stats: { totalUsers, totalOrders, totalRevenue, mode: FIVESIM_KEY? "REAL API" : "DEMO MODE" } });
 });
 
 app.listen(PORT, () => console.log(`OTPHub Server running with ${FIVESIM_KEY? 'REAL API' : 'DEMO MODE'} on ${PORT}`));

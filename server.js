@@ -13,7 +13,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
 const JWT_EXPIRES = process.env.JWT_EXPIRES || "7d";
-const FIVESIM_KEY = process.env.FIVESIM_KEY || "";
+const FIVESIM_KEY = process.env.FIVESIM_API_KEY || process.env.FIVESIM_KEY || "";
 const MONGODB_URI = process.env.MONGODB_URI || "";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 
@@ -37,8 +37,8 @@ const countries = [
 
 if (MONGODB_URI) {
   mongoose.connect(MONGODB_URI)
-  .then(() => console.log("✅ MongoDB Connected - Users will NEVER delete again"))
-  .catch(e => console.log("❌ Mongo Error:", e.message));
+ .then(() => console.log("✅ MongoDB Connected"))
+ .catch(e => console.log("❌ Mongo Error:", e.message));
 }
 
 const UserSchema = new mongoose.Schema({
@@ -82,13 +82,8 @@ async function authMiddleware(req, res, next) {
 }
 
 app.get("/api/health", (req, res) => {
-  res.json({
-    success: true, hasApiKey:!!FIVESIM_KEY, hasMongo:!!MONGODB_URI,
-    hasGoogle:!!GOOGLE_CLIENT_ID, mongoConnected: mongoose.connection.readyState === 1,
-    countries: countries.length, mode: FIVESIM_KEY? "REAL API" : "DEMO MODE"
-  });
+  res.json({ success: true, hasApiKey:!!FIVESIM_KEY, hasMongo:!!MONGODB_URI, mongoConnected: mongoose.connection.readyState === 1, mode: FIVESIM_KEY? "REAL API" : "NO KEY" });
 });
-app.get("/api/countries", (req, res) => { res.json({ success: true, countries }); });
 
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -109,9 +104,6 @@ app.post("/api/auth/login", async (req, res) => {
     const cleanEmail = req.body.email.trim().toLowerCase();
     const user = await User.findOne({ email: cleanEmail });
     if (!user) return res.status(401).json({ success: false, message: "Invalid email or password" });
-    if (user.authProvider === "google" &&!user.passwordHash) {
-      return res.status(400).json({ success: false, message: "This email uses Google login. Please use Google button." });
-    }
     const match = await bcrypt.compare(req.body.password, user.passwordHash);
     if (!match) return res.status(401).json({ success: false, message: "Invalid email or password" });
     user.lastLogin = new Date(); await user.save();
@@ -120,60 +112,59 @@ app.post("/api/auth/login", async (req, res) => {
   } catch(e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.post("/api/auth/google", async (req, res) => {
-  try {
-    const { idToken } = req.body;
-    if (!idToken) return res.status(400).json({ success: false, message: "No Google token" });
-    const googleRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
-    const googleData = await googleRes.json();
-    if (!googleRes.ok) return res.status(401).json({ success: false, message: "Invalid Google token" });
-    if (GOOGLE_CLIENT_ID && googleData.aud!== GOOGLE_CLIENT_ID) return res.status(401).json({ success: false, message: "Google token not for this app" });
-    const email = googleData.email.toLowerCase();
-    const googleId = googleData.sub;
-    const name = googleData.name || "";
-    const picture = googleData.picture || "";
-    let user = await User.findOne({ email });
-    if (!user) {
-      user = await User.create({ email, googleId, authProvider: "google", name, picture, balances: getDefaultBalances(), createdAt: new Date(), lastLogin: new Date() });
-    } else {
-      user.googleId = googleId; user.name = name || user.name; user.picture = picture || user.picture; user.lastLogin = new Date(); await user.save();
-    }
-    const token = generateToken(user);
-    res.json({ success: true, token, user: { id: user._id, email: user.email, balances: user.balances, name: user.name, picture: user.picture } });
-  } catch(e) { res.status(500).json({ success: false, message: "Google login failed: " + e.message }); }
-});
-
+// ===== BUY - NO DEMO - RETURNS "Number is unavailable" WHEN FAILS =====
 app.post("/api/orders", authMiddleware, async (req, res) => {
   try {
     const { country, service } = req.body;
     const selectedCountry = countries.find(c => c.code === country);
-    if (!selectedCountry) return res.status(400).json({ success: false, message: "Country not supported" });
+    if (!selectedCountry) return res.status(400).json({ success: false, message: "Number is unavailable" });
+
+    if (!FIVESIM_KEY) {
+      return res.status(400).json({ success: false, message: "Number is unavailable" });
+    }
+
     const price = selectedCountry.price;
     const userBalances = req.user.balances || getDefaultBalances();
     if ((userBalances[country] || 0) < price) return res.status(400).json({ success: false, message: "Insufficient balance" });
-    userBalances[country] -= price; req.user.balances = userBalances; req.user.markModified('balances'); await req.user.save();
-    let realPhone = null; let fiveSimId = null;
-    if (FIVESIM_KEY) {
-      try {
-        const resp = await fetch(`https://5sim.net/v1/user/buy/activation/${selectedCountry.fivesim}/any/${service}`, {
-          headers: { Authorization: `Bearer ${FIVESIM_KEY}`, Accept: "application/json" }
-        });
-        const data = await resp.json();
-        if (resp.ok) { realPhone = data.phone; fiveSimId = data.id; }
-      } catch(e) { console.log("5sim error:", e.message); }
+
+    // Buy REAL number
+    let realPhone = null;
+    let fiveSimId = null;
+    try {
+      const resp = await fetch(`https://5sim.net/v1/user/buy/activation/${selectedCountry.fivesim}/any/${service}`, {
+        headers: { Authorization: `Bearer ${FIVESIM_KEY}`, Accept: "application/json" }
+      });
+      const data = await resp.json();
+      console.log("5sim:", data);
+      if (resp.ok && data.phone) {
+        realPhone = data.phone;
+        fiveSimId = data.id;
+      } else {
+        return res.status(400).json({ success: false, message: "Number is unavailable" });
+      }
+    } catch(e) {
+      console.log("5sim error:", e.message);
+      return res.status(400).json({ success: false, message: "Number is unavailable" });
     }
-    const phone = realPhone || selectedCountry.prefix + Math.floor(7000000000 + Math.random()*999999999).toString().slice(0,10);
+
+    // Deduct only after success
+    userBalances[country] -= price;
+    req.user.balances = userBalances;
+    req.user.markModified('balances');
+    await req.user.save();
+
     const orderId = generateId();
-    const order = await Order.create({ id: orderId, userId: req.user._id.toString(), email: req.user.email, country, service, phone, fiveSimId, price, status: "waiting", otp: null, isReal:!!realPhone, createdAt: new Date(), expiresAt: new Date(Date.now() + 15*60*1000) });
-    if(!realPhone){
-      setTimeout(async () => {
-        const o = await Order.findOne({ id: orderId });
-        if(o){ o.otp = Math.floor(100000 + Math.random()*900000).toString(); o.status = "received"; await o.save(); }
-      }, 6000);
-    }
+    const order = await Order.create({
+      id: orderId, userId: req.user._id.toString(), email: req.user.email,
+      country, service, phone: realPhone, fiveSimId, price,
+      status: "waiting", otp: null, isReal:true,
+      createdAt: new Date(), expiresAt: new Date(Date.now() + 15*60*1000)
+    });
+
     const freshUser = await User.findById(req.user._id);
     res.json({ success: true, order, balances: freshUser.balances });
-  } catch(e){ res.status(500).json({ success: false, message: "Server error: " + e.message }); }
+
+  } catch(e){ res.status(500).json({ success: false, message: "Number is unavailable" }); }
 });
 
 app.get("/api/orders/:orderId", authMiddleware, async (req, res) => {
@@ -184,46 +175,21 @@ app.get("/api/orders/:orderId", authMiddleware, async (req, res) => {
       try {
         const resp = await fetch(`https://5sim.net/v1/user/check/${order.fiveSimId}`, { headers: { Authorization: `Bearer ${FIVESIM_KEY}`, Accept: "application/json" } });
         const data = await resp.json();
-        if (data.sms && data.sms[0]) { order.otp = data.sms[0].code || data.sms[0].text?.match(/\d{4,6}/)?.[0]; order.status = "received"; await order.save(); }
+        if (data.sms && data.sms[0]) {
+          order.otp = data.sms[0].code || data.sms[0].text?.match(/\d{4,6}/)?.[0];
+          order.status = "received";
+          await order.save();
+        }
       } catch(e){}
     }
     res.json({ success: true, order });
   } catch(e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get("/api/admin/users", async (req, res) => {
-  try {
-    const users = await User.find().sort({ createdAt: -1 });
-    const usersWithStats = await Promise.all(users.map(async u => {
-      const userOrders = await Order.find({ userId: u._id.toString() });
-      return { id: u._id, email: u.email, name: u.name, provider: u.authProvider, picture: u.picture, balances: u.balances, createdAt: u.createdAt, lastLogin: u.lastLogin, ordersCount: userOrders.length, totalSpent: userOrders.reduce((sum, o) => sum + (o.price||0), 0) };
-    }));
-    res.json({ success: true, total: usersWithStats.length, users: usersWithStats });
-  } catch(e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get("/api/admin/orders", async (req, res) => {
-  try {
-    const allOrders = await Order.find().sort({ createdAt: -1 });
-    res.json({ success: true, total: allOrders.length, orders: allOrders });
-  } catch(e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get("/api/admin/stats", async (req, res) => {
-  try {
-    const totalUsers = await User.countDocuments();
-    const totalOrders = await Order.countDocuments();
-    const allOrders = await Order.find();
-    const totalRevenue = allOrders.reduce((s,o)=> s + (o.price||0), 0);
-    res.json({ success: true, stats: { totalUsers, totalOrders, totalRevenue, mode: FIVESIM_KEY? "REAL API" : "DEMO MODE", mongo: mongoose.connection.readyState === 1 } });
-  } catch(e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-// ===== PAYSTACK - AUTO CREDIT WALLET - FIXED =====
+// PAYSTACK
 app.post('/api/pay/initialize', async (req, res) => {
   try{
     const { email, amount } = req.body;
-    if(!email ||!amount) return res.json({ success: false, message: "email and amount required" });
     const r = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
@@ -231,7 +197,6 @@ app.post('/api/pay/initialize', async (req, res) => {
         email,
         amount: Math.round(Number(amount) * 100),
         callback_url: 'https://matthewchi12.github.io/payment-success.html',
-        metadata: { user_email: email }
       })
     });
     const data = await r.json();
@@ -239,47 +204,29 @@ app.post('/api/pay/initialize', async (req, res) => {
   }catch(e){ res.json({ success: false, message: e.message }); }
 });
 
-app.get('/api/pay/verify/:reference', async (req, res) => {
+async function verifyAndCredit(reference, res) {
   try{
-    const r = await fetch(`https://api.paystack.co/transaction/verify/${req.params.reference}`, {
+    const r = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
       headers: { 'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
     });
     const data = await r.json();
-
     if(data.data && data.data.status === 'success'){
       const paidEmail = data.data.customer.email.toLowerCase();
       const paidAmount = data.data.amount / 100;
-      // CREDIT TO NIGERIA WALLET
       const user = await User.findOne({ email: paidEmail });
       if(user){
         user.balances = user.balances || {};
         user.balances.nigeria = (user.balances.nigeria || 0) + paidAmount;
         user.markModified('balances');
         await user.save();
-        console.log(`✅ CREDITED ${paidEmail} ₦${paidAmount} -> Nigeria wallet now ${user.balances.nigeria}`);
       }
+      return res.json({ success: true, amount: paidAmount, email: paidEmail, balances: user?.balances, paystackData: data });
+    } else {
+      return res.json({ success: false, message: "Payment not success", data });
     }
-    res.json(data);
-  }catch(e){ res.json({ success: false, message: e.message }); }
-});
+  }catch(e){ return res.json({ success: false, message: e.message }); }
+}
+app.get('/api/pay/verify', async (req, res) => { return verifyAndCredit(req.query.reference, res); });
+app.get('/api/pay/verify/:reference', async (req, res) => { return verifyAndCredit(req.params.reference, res); });
 
-app.post('/api/pay/webhook', async (req, res) => {
-  try{
-    const event = req.body;
-    if(event.event === 'charge.success'){
-      const email = event.data.customer.email.toLowerCase();
-      const amount = event.data.amount / 100;
-      const user = await User.findOne({ email });
-      if(user){
-        user.balances = user.balances || {};
-        user.balances.nigeria = (user.balances.nigeria || 0) + amount;
-        user.markModified('balances');
-        await user.save();
-        console.log(`✅ WEBHOOK CREDITED ${email} ₦${amount}`);
-      }
-    }
-  }catch(e){ console.log("Webhook error", e.message); }
-  res.sendStatus(200);
-});
-
-app.listen(PORT, () => console.log(`OTPHub Server running with ${FIVESIM_KEY? 'REAL API' : 'DEMO MODE'} + MongoDB on ${PORT}`));
+app.listen(PORT, () => console.log(`✅ FIXED - No demo - Returns 'Number is unavailable' on fail - Port ${PORT}`));

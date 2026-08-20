@@ -232,4 +232,19 @@ async function verifyAndCredit(reference, res) {
 app.get('/api/pay/verify', async (req, res) => { return verifyAndCredit(req.query.reference, res); });
 app.get('/api/pay/verify/:reference', async (req, res) => { return verifyAndCredit(req.params.reference, res); });
 
+
+app.get("/test-paystack-key", async (req, res) => {
+  try {
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    console.log("Secret exists?", secret ? "YES" : "NO - not loaded");
+
+    const response = await fetch("https://api.paystack.co/balance", {
+      headers: { Authorization: `Bearer ${secret}` }
+    });
+    const data = await response.json();
+    res.json(data); // if key works, you will see your balance
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.listen(PORT, () => console.log(`✅ FIXED - No demo - Returns 'Number is unavailable' on fail - Port ${PORT}`));

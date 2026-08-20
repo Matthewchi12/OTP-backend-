@@ -10,333 +10,437 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors({ origin: "*" }));
+app.use(
+  cors({
+    origin: "*"
+  })
+);
+
 app.use(express.json());
 
-const PORT = process.env.PORT || 10000;
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
-const JWT_EXPIRES = process.env.JWT_EXPIRES || "7d";
+const PORT =
+  process.env.PORT || 10000;
+
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  "dev_secret_change_me";
+
+const JWT_EXPIRES =
+  process.env.JWT_EXPIRES ||
+  "7d";
 
 const FIVESIM_KEY =
   process.env.FIVESIM_API_KEY ||
   process.env.FIVESIM_KEY ||
   "";
 
-const MONGODB_URI = process.env.MONGODB_URI || "";
-const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || "";
+const MONGODB_URI =
+  process.env.MONGODB_URI ||
+  "";
+
+const PAYSTACK_SECRET =
+  process.env.PAYSTACK_SECRET_KEY ||
+  "";
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
   "https://matthewchi12.github.io";
 
 
-// ===============================
+// =====================================================
 // COUNTRIES
-// ===============================
+// =====================================================
 
 const countries = [
+
   {
-    code: "nigeria",
-    name: "Nigeria",
-    prefix: "+234",
-    currency: "NGN",
-    price: 1000,
-    topups: [5000, 10000, 20000],
-    fivesim: "nigeria"
+    code:"nigeria",
+    name:"Nigeria",
+    prefix:"+234",
+    currency:"NGN",
+    price:1000,
+    topups:[5000,10000,20000],
+    fivesim:"nigeria"
   },
+
   {
-    code: "usa",
-    name: "USA",
-    prefix: "+1",
-    currency: "USD",
-    price: 1,
-    topups: [5, 10, 20],
-    fivesim: "usa"
+    code:"usa",
+    name:"USA",
+    prefix:"+1",
+    currency:"USD",
+    price:1,
+    topups:[5,10,20],
+    fivesim:"usa"
   },
+
   {
-    code: "uk",
-    name: "UK",
-    prefix: "+44",
-    currency: "GBP",
-    price: 0.80,
-    topups: [5, 10, 15],
-    fivesim: "england"
+    code:"uk",
+    name:"UK",
+    prefix:"+44",
+    currency:"GBP",
+    price:0.80,
+    topups:[5,10,15],
+    fivesim:"england"
   },
+
   {
-    code: "canada",
-    name: "Canada",
-    prefix: "+1",
-    currency: "CAD",
-    price: 1.35,
-    topups: [6, 13, 27],
-    fivesim: "canada"
+    code:"canada",
+    name:"Canada",
+    prefix:"+1",
+    currency:"CAD",
+    price:1.35,
+    topups:[6,13,27],
+    fivesim:"canada"
   },
+
   {
-    code: "ghana",
-    name: "Ghana",
-    prefix: "+233",
-    currency: "GHS",
-    price: 12,
-    topups: [60, 120, 240],
-    fivesim: "ghana"
+    code:"ghana",
+    name:"Ghana",
+    prefix:"+233",
+    currency:"GHS",
+    price:12,
+    topups:[60,120,240],
+    fivesim:"ghana"
   },
+
   {
-    code: "kenya",
-    name: "Kenya",
-    prefix: "+254",
-    currency: "KES",
-    price: 130,
-    topups: [650, 1300, 2600],
-    fivesim: "kenya"
+    code:"kenya",
+    name:"Kenya",
+    prefix:"+254",
+    currency:"KES",
+    price:130,
+    topups:[650,1300,2600],
+    fivesim:"kenya"
   },
+
   {
-    code: "india",
-    name: "India",
-    prefix: "+91",
-    currency: "INR",
-    price: 70,
-    topups: [350, 700, 1400],
-    fivesim: "india"
+    code:"india",
+    name:"India",
+    prefix:"+91",
+    currency:"INR",
+    price:70,
+    topups:[350,700,1400],
+    fivesim:"india"
   },
+
   {
-    code: "southafrica",
-    name: "South Africa",
-    prefix: "+27",
-    currency: "ZAR",
-    price: 18,
-    topups: [90, 180, 360],
-    fivesim: "southafrica"
+    code:"southafrica",
+    name:"South Africa",
+    prefix:"+27",
+    currency:"ZAR",
+    price:18,
+    topups:[90,180,360],
+    fivesim:"southafrica"
   },
+
   {
-    code: "germany",
-    name: "Germany",
-    prefix: "+49",
-    currency: "EUR",
-    price: 0.9,
-    topups: [5, 9, 18],
-    fivesim: "germany"
+    code:"germany",
+    name:"Germany",
+    prefix:"+49",
+    currency:"EUR",
+    price:0.9,
+    topups:[5,9,18],
+    fivesim:"germany"
   },
+
   {
-    code: "france",
-    name: "France",
-    prefix: "+33",
-    currency: "EUR",
-    price: 0.9,
-    topups: [5, 9, 18],
-    fivesim: "france"
+    code:"france",
+    name:"France",
+    prefix:"+33",
+    currency:"EUR",
+    price:0.9,
+    topups:[5,9,18],
+    fivesim:"france"
   },
+
   {
-    code: "spain",
-    name: "Spain",
-    prefix: "+34",
-    currency: "EUR",
-    price: 0.9,
-    topups: [5, 9, 18],
-    fivesim: "spain"
+    code:"spain",
+    name:"Spain",
+    prefix:"+34",
+    currency:"EUR",
+    price:0.9,
+    topups:[5,9,18],
+    fivesim:"spain"
   },
+
   {
-    code: "italy",
-    name: "Italy",
-    prefix: "+39",
-    currency: "EUR",
-    price: 0.9,
-    topups: [5, 9, 18],
-    fivesim: "italy"
+    code:"italy",
+    name:"Italy",
+    prefix:"+39",
+    currency:"EUR",
+    price:0.9,
+    topups:[5,9,18],
+    fivesim:"italy"
   },
+
   {
-    code: "australia",
-    name: "Australia",
-    prefix: "+61",
-    currency: "AUD",
-    price: 1.5,
-    topups: [7, 15, 30],
-    fivesim: "australia"
+    code:"australia",
+    name:"Australia",
+    prefix:"+61",
+    currency:"AUD",
+    price:1.5,
+    topups:[7,15,30],
+    fivesim:"australia"
   },
+
   {
-    code: "brazil",
-    name: "Brazil",
-    prefix: "+55",
-    currency: "BRL",
-    price: 5,
-    topups: [25, 50, 100],
-    fivesim: "brazil"
+    code:"brazil",
+    name:"Brazil",
+    prefix:"+55",
+    currency:"BRL",
+    price:5,
+    topups:[25,50,100],
+    fivesim:"brazil"
   },
+
   {
-    code: "mexico",
-    name: "Mexico",
-    prefix: "+52",
-    currency: "MXN",
-    price: 18,
-    topups: [90, 180, 360],
-    fivesim: "mexico"
+    code:"mexico",
+    name:"Mexico",
+    prefix:"+52",
+    currency:"MXN",
+    price:18,
+    topups:[90,180,360],
+    fivesim:"mexico"
   }
+
 ];
 
 
-// ===============================
+// =====================================================
 // DATABASE
-// ===============================
+// =====================================================
 
 if (MONGODB_URI) {
+
   mongoose
     .connect(MONGODB_URI)
-    .then(() => console.log("✅ MongoDB Connected"))
+    .then(() =>
+      console.log(
+        "✅ MongoDB Connected"
+      )
+    )
     .catch(err =>
-      console.log("❌ MongoDB Error:", err.message)
+      console.log(
+        "❌ MongoDB Error:",
+        err.message
+      )
     );
+
 }
 
 
-// ===============================
+// =====================================================
 // SCHEMAS
-// ===============================
+// =====================================================
 
-const UserSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    unique: true,
-    lowercase: true,
-    trim: true
-  },
+const UserSchema =
+  new mongoose.Schema({
 
-  passwordHash: {
-    type: String,
-    default: null
-  },
+    email:{
+      type:String,
+      unique:true,
+      lowercase:true,
+      trim:true
+    },
 
-  authProvider: {
-    type: String,
-    enum: ["email", "google", "firebase"],
-    default: "firebase"
-  },
+    passwordHash:{
+      type:String,
+      default:null
+    },
 
-  googleId: {
-    type: String,
-    default: null
-  },
+    authProvider:{
+      type:String,
+      enum:[
+        "email",
+        "google",
+        "firebase"
+      ],
+      default:"email"
+    },
 
-  name: {
-    type: String,
-    default: ""
-  },
+    googleId:{
+      type:String,
+      default:null
+    },
 
-  picture: {
-    type: String,
-    default: ""
-  },
+    name:{
+      type:String,
+      default:""
+    },
 
-  balances: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
+    picture:{
+      type:String,
+      default:""
+    },
 
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
+    balances:{
+      type:mongoose.Schema.Types.Mixed,
+      default:{}
+    },
 
-  lastLogin: {
-    type: Date,
-    default: Date.now
-  }
-});
+    createdAt:{
+      type:Date,
+      default:Date.now
+    },
 
+    lastLogin:{
+      type:Date,
+      default:Date.now
+    }
 
-const OrderSchema = new mongoose.Schema({
-  id: String,
-
-  userId: String,
-
-  email: String,
-
-  country: String,
-
-  service: String,
-
-  phone: String,
-
-  fiveSimId: {
-    type: String,
-    default: null
-  },
-
-  price: Number,
-
-  status: String,
-
-  otp: {
-    type: String,
-    default: null
-  },
-
-  isReal: Boolean,
-
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-
-  expiresAt: Date
-});
+  });
 
 
-const TransactionSchema = new mongoose.Schema({
-  reference: {
-    type: String,
-    unique: true
-  },
+const OrderSchema =
+  new mongoose.Schema({
 
-  email: String,
+    id:String,
 
-  userId: String,
+    userId:String,
 
-  amount: Number,
+    email:String,
 
-  status: String,
+    country:String,
 
-  raw: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
+    service:String,
 
-  creditedAt: {
-    type: Date,
-    default: null
-  },
+    phone:String,
 
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
+    fiveSimId:{
+      type:String,
+      default:null
+    },
+
+    price:Number,
+
+    status:String,
+
+    otp:{
+      type:String,
+      default:null
+    },
+
+    isReal:Boolean,
+
+    createdAt:{
+      type:Date,
+      default:Date.now
+    },
+
+    expiresAt:Date
+
+  });
+
+
+const TransactionSchema =
+  new mongoose.Schema({
+
+    reference:{
+      type:String,
+      unique:true
+    },
+
+    email:String,
+
+    userId:String,
+
+    amount:Number,
+
+    status:String,
+
+    raw:{
+      type:mongoose.Schema.Types.Mixed,
+      default:{}
+    },
+
+    creditedAt:{
+      type:Date,
+      default:null
+    },
+
+    createdAt:{
+      type:Date,
+      default:Date.now
+    }
+
+  });
 
 
 const User =
   mongoose.models.User ||
-  mongoose.model("User", UserSchema);
+  mongoose.model(
+    "User",
+    UserSchema
+  );
 
 const Order =
   mongoose.models.Order ||
-  mongoose.model("Order", OrderSchema);
+  mongoose.model(
+    "Order",
+    OrderSchema
+  );
 
 const Transaction =
   mongoose.models.Transaction ||
-  mongoose.model("Transaction", TransactionSchema);
+  mongoose.model(
+    "Transaction",
+    TransactionSchema
+  );
 
 
-// ===============================
+// =====================================================
 // HELPERS
-// ===============================
+// =====================================================
 
 function getDefaultBalances() {
 
   const balances = {};
 
-  countries.forEach(country => {
-    balances[country.code] = 0;
-  });
+  countries.forEach(
+    country => {
+
+      balances[
+        country.code
+      ] = 0;
+
+    }
+  );
 
   return balances;
+}
+
+
+function ensureBalances(user) {
+
+  if (!user.balances) {
+
+    user.balances =
+      getDefaultBalances();
+
+  }
+
+  countries.forEach(
+    country => {
+
+      if (
+        user.balances[
+          country.code
+        ] === undefined ||
+        user.balances[
+          country.code
+        ] === null
+      ) {
+
+        user.balances[
+          country.code
+        ] = 0;
+
+      }
+
+    }
+  );
+
+  return user.balances;
 }
 
 
@@ -348,42 +452,64 @@ function generateId() {
     "-" +
     Math.random()
       .toString(36)
-      .slice(2, 8)
+      .slice(2,8)
   );
+
 }
 
 
 function generateToken(user) {
 
   return jwt.sign(
+
     {
-      id: user._id.toString(),
-      email: user.email
+      id:
+        user._id.toString(),
+
+      email:
+        user.email
     },
+
     JWT_SECRET,
+
     {
-      expiresIn: JWT_EXPIRES
+      expiresIn:
+        JWT_EXPIRES
     }
+
   );
+
 }
 
 
-// ===============================
+// =====================================================
 // AUTH MIDDLEWARE
-// ===============================
+// =====================================================
 
-async function authMiddleware(req, res, next) {
+async function authMiddleware(
+  req,
+  res,
+  next
+) {
 
-  const header = req.headers.authorization;
+  const header =
+    req.headers.authorization;
 
   if (
     !header ||
-    !header.startsWith("Bearer ")
+    !header.startsWith(
+      "Bearer "
+    )
   ) {
+
     return res.status(401).json({
-      success: false,
-      message: "No token"
+
+      success:false,
+
+      message:"No token"
+
     });
+
   }
 
   try {
@@ -405,20 +531,32 @@ async function authMiddleware(req, res, next) {
     if (!user) {
 
       return res.status(401).json({
-        success: false,
-        message: "User not found"
+
+        success:false,
+
+        message:
+          "User not found"
+
       });
+
     }
 
-    req.user = user;
+    ensureBalances(user);
+
+    req.user =
+      user;
 
     next();
 
   } catch (error) {
 
     return res.status(401).json({
-      success: false,
-      message: "Invalid token"
+
+      success:false,
+
+      message:
+        "Invalid token"
+
     });
 
   }
@@ -426,16 +564,17 @@ async function authMiddleware(req, res, next) {
 }
 
 
-// ===============================
+// =====================================================
 // HEALTH
-// ===============================
+// =====================================================
 
 app.get(
   "/api/health",
-  (req, res) => {
+  (req,res) => {
 
     res.json({
-      success: true,
+
+      success:true,
 
       hasApiKey:
         !!FIVESIM_KEY,
@@ -445,19 +584,20 @@ app.get(
 
       mongoConnected:
         mongoose.connection.readyState === 1
+
     });
 
   }
 );
 
 
-// ===============================
-// AUTH REGISTER
-// ===============================
+// =====================================================
+// REGISTER
+// =====================================================
 
 app.post(
   "/api/auth/register",
-  async (req, res) => {
+  async (req,res) => {
 
     try {
 
@@ -466,18 +606,24 @@ app.post(
         password
       } = req.body;
 
-      if (!email || !password) {
+      if (
+        !email ||
+        !password
+      ) {
 
         return res.status(400).json({
-          success: false,
+
+          success:false,
+
           message:
             "Email and password required"
+
         });
 
       }
 
       const cleanEmail =
-        email
+        String(email)
           .trim()
           .toLowerCase();
 
@@ -490,9 +636,12 @@ app.post(
       if (exists) {
 
         return res.status(409).json({
-          success: false,
+
+          success:false,
+
           message:
             "Email exists"
+
         });
 
       }
@@ -520,17 +669,16 @@ app.post(
         });
 
       const token =
-        generateToken(
-          user
-        );
+        generateToken(user);
 
       res.status(201).json({
 
-        success: true,
+        success:true,
 
         token,
 
-        user: {
+        user:{
+
           id:
             user._id,
 
@@ -539,15 +687,16 @@ app.post(
 
           balances:
             user.balances
+
         }
 
       });
 
-    } catch (error) {
+    } catch(error) {
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           error.message
@@ -560,13 +709,13 @@ app.post(
 );
 
 
-// ===============================
-// AUTH LOGIN
-// ===============================
+// =====================================================
+// LOGIN
+// =====================================================
 
 app.post(
   "/api/auth/login",
-  async (req, res) => {
+  async (req,res) => {
 
     try {
 
@@ -574,8 +723,8 @@ app.post(
         String(
           req.body.email || ""
         )
-          .trim()
-          .toLowerCase();
+        .trim()
+        .toLowerCase();
 
       const user =
         await User.findOne({
@@ -587,7 +736,7 @@ app.post(
 
         return res.status(401).json({
 
-          success: false,
+          success:false,
 
           message:
             "Invalid email or password"
@@ -600,10 +749,10 @@ app.post(
 
         return res.status(401).json({
 
-          success: false,
+          success:false,
 
           message:
-            "This account uses Firebase login"
+            "This account uses another login method"
 
         });
 
@@ -619,7 +768,7 @@ app.post(
 
         return res.status(401).json({
 
-          success: false,
+          success:false,
 
           message:
             "Invalid email or password"
@@ -628,23 +777,27 @@ app.post(
 
       }
 
+      ensureBalances(user);
+
       user.lastLogin =
         new Date();
+
+      user.markModified(
+        "balances"
+      );
 
       await user.save();
 
       const token =
-        generateToken(
-          user
-        );
+        generateToken(user);
 
       res.json({
 
-        success: true,
+        success:true,
 
         token,
 
-        user: {
+        user:{
 
           id:
             user._id,
@@ -659,11 +812,11 @@ app.post(
 
       });
 
-    } catch (error) {
+    } catch(error) {
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           error.message
@@ -676,23 +829,27 @@ app.post(
 );
 
 
-// ===============================
-// GET USER
-// ===============================
+// =====================================================
+// USER ME
+// =====================================================
 
 app.get(
   "/api/user/me",
   authMiddleware,
-  async (req, res) => {
+  async (req,res) => {
 
     const fresh =
       await User.findById(
         req.user._id
       );
 
+    ensureBalances(fresh);
+
+    await fresh.save();
+
     res.json({
 
-      success: true,
+      success:true,
 
       balances:
         fresh.balances,
@@ -706,19 +863,27 @@ app.get(
 );
 
 
+// =====================================================
+// USER BALANCE
+// =====================================================
+
 app.get(
   "/api/user/balance",
   authMiddleware,
-  async (req, res) => {
+  async (req,res) => {
 
     const fresh =
       await User.findById(
         req.user._id
       );
 
+    ensureBalances(fresh);
+
+    await fresh.save();
+
     res.json({
 
-      success: true,
+      success:true,
 
       balances:
         fresh.balances
@@ -729,27 +894,27 @@ app.get(
 );
 
 
-// ===============================
-// FIREBASE USER SYNC
-// ===============================
+// =====================================================
+// FIREBASE SYNC
+// =====================================================
 
 app.post(
   "/api/firebase/sync",
-  async (req, res) => {
+  async (req,res) => {
 
     try {
 
       const {
         email,
-        name = "",
-        picture = ""
+        name="",
+        picture=""
       } = req.body;
 
       if (!email) {
 
         return res.status(400).json({
 
-          success: false,
+          success:false,
 
           message:
             "Email required"
@@ -791,36 +956,29 @@ app.post(
 
       } else {
 
+        ensureBalances(user);
+
         user.lastLogin =
           new Date();
 
-        if (!user.balances) {
-
-          user.balances =
-            getDefaultBalances();
-
-          user.markModified(
-            "balances"
-          );
-
-        }
+        user.markModified(
+          "balances"
+        );
 
         await user.save();
 
       }
 
       const token =
-        generateToken(
-          user
-        );
+        generateToken(user);
 
       res.json({
 
-        success: true,
+        success:true,
 
         token,
 
-        user: {
+        user:{
 
           id:
             user._id,
@@ -835,11 +993,11 @@ app.post(
 
       });
 
-    } catch (error) {
+    } catch(error) {
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           error.message
@@ -852,14 +1010,14 @@ app.post(
 );
 
 
-// ===============================
+// =====================================================
 // BUY OTP
-// ===============================
+// =====================================================
 
 app.post(
   "/api/orders",
   authMiddleware,
-  async (req, res) => {
+  async (req,res) => {
 
     try {
 
@@ -878,7 +1036,7 @@ app.post(
 
         return res.status(400).json({
 
-          success: false,
+          success:false,
 
           message:
             "Number is unavailable"
@@ -889,33 +1047,40 @@ app.post(
 
       if (!FIVESIM_KEY) {
 
-        return res.status(400).json({
+        return res.status(500).json({
 
-          success: false,
+          success:false,
 
           message:
-            "Number is unavailable"
+            "5SIM API key missing"
 
         });
 
       }
 
       const price =
-        selectedCountry.price;
+        Number(
+          selectedCountry.price
+        );
 
-      const userBalances =
-        req.user.balances ||
-        getDefaultBalances();
+      const balances =
+        ensureBalances(
+          req.user
+        );
+
+      const currentBalance =
+        Number(
+          balances[country]
+        ) || 0;
 
       if (
-        (Number(
-          userBalances[country]
-        ) || 0) < price
+        currentBalance <
+        price
       ) {
 
         return res.status(400).json({
 
-          success: false,
+          success:false,
 
           message:
             "insufficient balance add money"
@@ -939,7 +1104,7 @@ app.post(
 
             {
 
-              headers: {
+              headers:{
 
                 Authorization:
                   `Bearer ${FIVESIM_KEY}`,
@@ -969,9 +1134,14 @@ app.post(
 
         } else {
 
+          console.error(
+            "5SIM ERROR:",
+            data
+          );
+
           return res.status(400).json({
 
-            success: false,
+            success:false,
 
             message:
               "Number is unavailable"
@@ -980,11 +1150,16 @@ app.post(
 
         }
 
-      } catch (error) {
+      } catch(error) {
+
+        console.error(
+          "5SIM REQUEST ERROR:",
+          error
+        );
 
         return res.status(400).json({
 
-          success: false,
+          success:false,
 
           message:
             "Number is unavailable"
@@ -993,11 +1168,12 @@ app.post(
 
       }
 
-      userBalances[country] -=
+      balances[country] =
+        currentBalance -
         price;
 
       req.user.balances =
-        userBalances;
+        balances;
 
       req.user.markModified(
         "balances"
@@ -1045,27 +1221,27 @@ app.post(
 
         });
 
-      const freshUser =
-        await User.findById(
-          req.user._id
-        );
-
       res.json({
 
-        success: true,
+        success:true,
 
         order,
 
         balances:
-          freshUser.balances
+          req.user.balances
 
       });
 
-    } catch (error) {
+    } catch(error) {
+
+      console.error(
+        "ORDER ERROR:",
+        error
+      );
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           "Number is unavailable"
@@ -1078,14 +1254,14 @@ app.post(
 );
 
 
-// ===============================
+// =====================================================
 // CHECK OTP
-// ===============================
+// =====================================================
 
 app.get(
   "/api/orders/:orderId",
   authMiddleware,
-  async (req, res) => {
+  async (req,res) => {
 
     try {
 
@@ -1104,7 +1280,7 @@ app.get(
 
         return res.status(404).json({
 
-          success: false,
+          success:false,
 
           message:
             "Not found"
@@ -1128,7 +1304,7 @@ app.get(
 
               {
 
-                headers: {
+                headers:{
 
                   Authorization:
                     `Bearer ${FIVESIM_KEY}`,
@@ -1164,23 +1340,30 @@ app.get(
 
           }
 
-        } catch (error) {}
+        } catch(error) {
+
+          console.log(
+            "5SIM OTP check error:",
+            error.message
+          );
+
+        }
 
       }
 
       res.json({
 
-        success: true,
+        success:true,
 
         order
 
       });
 
-    } catch (error) {
+    } catch(error) {
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           error.message
@@ -1194,22 +1377,17 @@ app.get(
 
 
 // =====================================================
-// PAYSTACK
+// PAYSTACK INITIALIZE
 // =====================================================
-
-
-// ===============================
-// CREATE TRANSACTION
-// ===============================
 
 app.post(
   "/api/pay/initialize",
-  async (req, res) => {
+  authMiddleware,
+  async (req,res) => {
 
     try {
 
       const {
-        email,
         amount
       } = req.body;
 
@@ -1217,23 +1395,10 @@ app.post(
 
         return res.status(500).json({
 
-          success: false,
+          success:false,
 
           message:
             "PAYSTACK_SECRET_KEY missing"
-
-        });
-
-      }
-
-      if (!email) {
-
-        return res.status(400).json({
-
-          success: false,
-
-          message:
-            "Email required"
 
         });
 
@@ -1251,7 +1416,7 @@ app.post(
 
         return res.status(400).json({
 
-          success: false,
+          success:false,
 
           message:
             "Minimum payment is ₦100"
@@ -1261,35 +1426,17 @@ app.post(
       }
 
       const cleanEmail =
-        email
-          .trim()
-          .toLowerCase();
+        String(
+          req.user.email
+        )
+        .trim()
+        .toLowerCase();
 
-      let user =
-        await User.findOne({
-
-          email:
-            cleanEmail
-
-        });
-
-      if (!user) {
-
-        user =
-          await User.create({
-
-            email:
-              cleanEmail,
-
-            authProvider:
-              "firebase",
-
-            balances:
-              getDefaultBalances()
-
-          });
-
-      }
+      // IMPORTANT:
+      // callback returns to the MAIN SITE,
+      // where the frontend checks ?reference=
+      const callbackUrl =
+        `${FRONTEND_URL}/`;
 
       const response =
         await fetch(
@@ -1298,10 +1445,9 @@ app.post(
 
           {
 
-            method:
-              "POST",
+            method:"POST",
 
-            headers: {
+            headers:{
 
               Authorization:
                 `Bearer ${PAYSTACK_SECRET}`,
@@ -1319,16 +1465,20 @@ app.post(
 
                 amount:
                   Math.round(
-                    numericAmount * 100
+                    numericAmount *
+                    100
                   ),
 
-                callback_url:
-                  `${FRONTEND_URL}/payment-success.html`,
+                currency:
+                  "NGN",
 
-                metadata: {
+                callback_url:
+                  callbackUrl,
+
+                metadata:{
 
                   userId:
-                    user._id.toString(),
+                    req.user._id.toString(),
 
                   email:
                     cleanEmail,
@@ -1353,9 +1503,14 @@ app.post(
         !data.data
       ) {
 
+        console.error(
+          "PAYSTACK INITIALIZE:",
+          data
+        );
+
         return res.status(400).json({
 
-          success: false,
+          success:false,
 
           message:
             data.message ||
@@ -1365,33 +1520,50 @@ app.post(
 
       }
 
-      await Transaction.create({
+      await Transaction.findOneAndUpdate(
 
-        reference:
-          data.data.reference,
+        {
+          reference:
+            data.data.reference
+        },
 
-        email:
-          cleanEmail,
+        {
 
-        userId:
-          user._id.toString(),
+          reference:
+            data.data.reference,
 
-        amount:
-          numericAmount,
+          email:
+            cleanEmail,
 
-        status:
-          "pending",
+          userId:
+            req.user._id.toString(),
 
-        raw:
-          data.data
+          amount:
+            numericAmount,
 
-      });
+          status:
+            "pending",
+
+          raw:
+            data.data
+
+        },
+
+        {
+
+          upsert:true,
+
+          new:true
+
+        }
+
+      );
 
       res.json(
         data
       );
 
-    } catch (error) {
+    } catch(error) {
 
       console.error(
         "PAYSTACK INITIALIZE ERROR:",
@@ -1400,7 +1572,7 @@ app.post(
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           "Payment initialization failed"
@@ -1413,9 +1585,9 @@ app.post(
 );
 
 
-// ===============================
-// INTERNAL PAYMENT CREDIT
-// ===============================
+// =====================================================
+// PROCESS PAYMENT
+// =====================================================
 
 async function processPayment(
   reference
@@ -1437,11 +1609,10 @@ async function processPayment(
 
   }
 
+  // First check if already processed
   let transaction =
     await Transaction.findOne({
-
       reference
-
     });
 
   if (
@@ -1450,21 +1621,41 @@ async function processPayment(
       "success"
   ) {
 
+    const user =
+      await User.findById(
+        transaction.userId
+      );
+
+    if (!user) {
+
+      throw new Error(
+        "User account not found"
+      );
+
+    }
+
+    ensureBalances(user);
+
     return {
 
-      success: true,
+      success:true,
 
-      alreadyCredited:
-        true,
+      alreadyCredited:true,
 
       amount:
         transaction.amount,
 
-      reference
+      reference,
+
+      balances:
+        user.balances
 
     };
 
   }
+
+
+  // Verify directly with Paystack
 
   const response =
     await fetch(
@@ -1473,7 +1664,7 @@ async function processPayment(
 
       {
 
-        headers: {
+        headers:{
 
           Authorization:
             `Bearer ${PAYSTACK_SECRET}`,
@@ -1515,7 +1706,7 @@ async function processPayment(
 
     return {
 
-      success: false,
+      success:false,
 
       message:
         "Payment has not been completed",
@@ -1527,19 +1718,22 @@ async function processPayment(
 
   }
 
+
+  // =========================================
+  // PAYMENT INFORMATION
+  // =========================================
+
   const paidReference =
     payment.reference;
 
   const paidEmail =
     String(
-
       payment.customer?.email ||
       transaction?.email ||
       ""
-
     )
-      .trim()
-      .toLowerCase();
+    .trim()
+    .toLowerCase();
 
   if (!paidEmail) {
 
@@ -1567,24 +1761,54 @@ async function processPayment(
 
   }
 
-  let user =
-    null;
 
-  const metadataUserId =
-    payment.metadata?.userId;
+  // =========================================
+  // FIND USER USING TRANSACTION FIRST
+  // =========================================
 
-  if (metadataUserId) {
+  let user = null;
 
-    try {
+  if (
+    transaction &&
+    transaction.userId
+  ) {
 
-      user =
-        await User.findById(
-          metadataUserId
-        );
-
-    } catch (error) {}
+    user =
+      await User.findById(
+        transaction.userId
+      );
 
   }
+
+
+  // =========================================
+  // THEN METADATA USER ID
+  // =========================================
+
+  if (!user) {
+
+    const metadataUserId =
+      payment.metadata?.userId;
+
+    if (metadataUserId) {
+
+      try {
+
+        user =
+          await User.findById(
+            metadataUserId
+          );
+
+      } catch(error) {}
+
+    }
+
+  }
+
+
+  // =========================================
+  // LAST FALLBACK = EMAIL
+  // =========================================
 
   if (!user) {
 
@@ -1598,6 +1822,7 @@ async function processPayment(
 
   }
 
+
   if (!user) {
 
     throw new Error(
@@ -1605,6 +1830,11 @@ async function processPayment(
     );
 
   }
+
+
+  // =========================================
+  // DOUBLE PAYMENT PROTECTION
+  // =========================================
 
   const existingSuccess =
     await Transaction.findOne({
@@ -1619,38 +1849,56 @@ async function processPayment(
 
   if (existingSuccess) {
 
+    ensureBalances(user);
+
     return {
 
-      success: true,
+      success:true,
 
-      alreadyCredited:
-        true,
+      alreadyCredited:true,
 
       amount:
         existingSuccess.amount,
 
       reference:
-        paidReference
+        paidReference,
+
+      balances:
+        user.balances
 
     };
 
   }
 
-  user.balances =
-    user.balances ||
-    getDefaultBalances();
+
+  // =========================================
+  // CREDIT NGN WALLET
+  // =========================================
+
+  ensureBalances(user);
+
+  const oldBalance =
+    Number(
+      user.balances.nigeria
+    ) || 0;
+
+  const newBalance =
+    oldBalance +
+    paidAmount;
 
   user.balances.nigeria =
-    (Number(
-      user.balances.nigeria
-    ) || 0) +
-    paidAmount;
+    newBalance;
 
   user.markModified(
     "balances"
   );
 
   await user.save();
+
+
+  // =========================================
+  // SAVE TRANSACTION AS SUCCESS
+  // =========================================
 
   await Transaction.findOneAndUpdate(
 
@@ -1686,23 +1934,20 @@ async function processPayment(
 
     {
 
-      upsert:
-        true,
+      upsert:true,
 
-      new:
-        true
+      new:true
 
     }
 
   );
 
+
   return {
 
-    success:
-      true,
+    success:true,
 
-    alreadyCredited:
-      false,
+    alreadyCredited:false,
 
     amount:
       paidAmount,
@@ -1718,13 +1963,14 @@ async function processPayment(
 }
 
 
-// ===============================
+// =====================================================
 // VERIFY PAYMENT
-// ===============================
+// =====================================================
 
 app.get(
   "/api/pay/verify",
-  async (req, res) => {
+  authMiddleware,
+  async (req,res) => {
 
     try {
 
@@ -1733,11 +1979,38 @@ app.get(
           req.query.reference
         );
 
+      // Security:
+      // Make sure the payment belongs
+      // to the logged-in account.
+
+      const transaction =
+        await Transaction.findOne({
+          reference:
+            req.query.reference
+        });
+
+      if (
+        transaction &&
+        transaction.userId !==
+          req.user._id.toString()
+      ) {
+
+        return res.status(403).json({
+
+          success:false,
+
+          message:
+            "Payment does not belong to this account"
+
+        });
+
+      }
+
       res.json(
         result
       );
 
-    } catch (error) {
+    } catch(error) {
 
       console.error(
         "PAYMENT VERIFY ERROR:",
@@ -1746,7 +2019,7 @@ app.get(
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           error.message
@@ -1759,9 +2032,14 @@ app.get(
 );
 
 
+// =====================================================
+// VERIFY PAYMENT BY REFERENCE
+// =====================================================
+
 app.get(
   "/api/pay/verify/:reference",
-  async (req, res) => {
+  authMiddleware,
+  async (req,res) => {
 
     try {
 
@@ -1770,11 +2048,36 @@ app.get(
           req.params.reference
         );
 
+      const transaction =
+        await Transaction.findOne({
+
+          reference:
+            req.params.reference
+
+        });
+
+      if (
+        transaction &&
+        transaction.userId !==
+          req.user._id.toString()
+      ) {
+
+        return res.status(403).json({
+
+          success:false,
+
+          message:
+            "Payment does not belong to this account"
+
+        });
+
+      }
+
       res.json(
         result
       );
 
-    } catch (error) {
+    } catch(error) {
 
       console.error(
         "PAYMENT VERIFY ERROR:",
@@ -1783,7 +2086,7 @@ app.get(
 
       res.status(500).json({
 
-        success: false,
+        success:false,
 
         message:
           error.message
@@ -1796,13 +2099,13 @@ app.get(
 );
 
 
-// ===============================
+// =====================================================
 // PAYSTACK WEBHOOK
-// ===============================
+// =====================================================
 
 app.post(
   "/api/pay/webhook",
-  async (req, res) => {
+  async (req,res) => {
 
     try {
 
@@ -1830,9 +2133,7 @@ app.post(
               req.body
             )
           )
-          .digest(
-            "hex"
-          );
+          .digest("hex");
 
       if (
         signature !==
@@ -1844,6 +2145,12 @@ app.post(
         );
 
       }
+
+      // Respond quickly to Paystack
+
+      res.sendStatus(
+        200
+      );
 
       if (
         req.body.event ===
@@ -1861,7 +2168,12 @@ app.post(
               reference
             );
 
-          } catch (error) {
+            console.log(
+              "✅ Webhook payment processed:",
+              reference
+            );
+
+          } catch(error) {
 
             console.error(
               "WEBHOOK PAYMENT ERROR:",
@@ -1874,20 +2186,16 @@ app.post(
 
       }
 
-      return res.sendStatus(
-        200
-      );
-
-    } catch (error) {
+    } catch(error) {
 
       console.error(
         "WEBHOOK ERROR:",
         error
       );
 
-      return res.sendStatus(
-        200
-      );
+      if (!res.headersSent) {
+        res.sendStatus(200);
+      }
 
     }
 
@@ -1895,9 +2203,9 @@ app.post(
 );
 
 
-// ===============================
+// =====================================================
 // START
-// ===============================
+// =====================================================
 
 app.listen(
   PORT,

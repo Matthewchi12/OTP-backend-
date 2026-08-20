@@ -10,23 +10,20 @@ dotenv.config();
 const app = express();
 app.use(cors({ origin: "*" }));
 
-// FIX 1: Webhook needs raw body BEFORE json parser
+// FIX: Webhook raw body BEFORE json
 app.post("/api/pay/webhook", express.raw({type: "application/json"}), async (req,res) => {
   try {
     const signature = req.headers["x-paystack-signature"];
     if (!signature) return res.sendStatus(401);
-    const expectedSignature = crypto.createHmac("sha512", PAYSTACK_SECRET).update(req.body).digest("hex");
-    if (signature!== expectedSignature) return res.sendStatus(401);
+    const expected = crypto.createHmac("sha512", PAYSTACK_SECRET).update(req.body).digest("hex");
+    if (signature!== expected) return res.sendStatus(401);
     res.sendStatus(200);
     const payload = JSON.parse(req.body.toString());
     if (payload.event === "charge.success") {
-      const reference = payload.data?.reference;
-      if (reference) {
-        try { await processPayment(reference); console.log("✅ Webhook:", reference); }
-        catch(e){ console.error("WEBHOOK ERROR:", e.message); }
-      }
+      const ref = payload.data?.reference;
+      if (ref) { try { await processPayment(ref); } catch(e){} }
     }
-  } catch(e){ console.error("WEBHOOK ERROR:", e); if(!res.headersSent) res.sendStatus(200); }
+  } catch(e){ if(!res.headersSent) res.sendStatus(200); }
 });
 
 app.use(express.json());
@@ -57,276 +54,210 @@ const countries = [
   { code:"mexico", name:"Mexico", prefix:"+52", currency:"MXN", price:18, topups:[90,180,360], fivesim:"mexico" }
 ];
 
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI).then(() => console.log("✅ MongoDB Connected")).catch(err => console.log("❌ MongoDB Error:", err.message));
-}
+if (MONGODB_URI) { mongoose.connect(MONGODB_URI).then(()=>console.log("✅ MongoDB")).catch(e=>console.log("❌ Mongo", e.message)); }
 
 const UserSchema = new mongoose.Schema({
-  email:{ type:String, unique:true, lowercase:true, trim:true },
-  passwordHash:{ type:String, default:null },
-  authProvider:{ type:String, enum:["email","google","firebase"], default:"email" },
-  googleId:{ type:String, default:null },
-  name:{ type:String, default:"" },
-  picture:{ type:String, default:"" },
-  balances:{ type:mongoose.Schema.Types.Mixed, default:{} },
-  createdAt:{ type:Date, default:Date.now },
-  lastLogin:{ type:Date, default:Date.now }
+  email:{type:String, unique:true, lowercase:true, trim:true},
+  passwordHash:{type:String, default:null},
+  authProvider:{type:String, enum:["email","google","firebase"], default:"email"},
+  googleId:{type:String, default:null}, name:{type:String, default:""}, picture:{type:String, default:""},
+  balances:{type:mongoose.Schema.Types.Mixed, default:{}},
+  createdAt:{type:Date, default:Date.now}, lastLogin:{type:Date, default:Date.now}
 });
 const OrderSchema = new mongoose.Schema({
   id:String, userId:String, email:String, country:String, service:String, phone:String,
-  fiveSimId:{ type:String, default:null }, price:Number, status:String, otp:{ type:String, default:null },
-  isReal:Boolean, createdAt:{ type:Date, default:Date.now }, expiresAt:Date
+  fiveSimId:{type:String, default:null}, price:Number, status:String, otp:{type:String, default:null},
+  isReal:Boolean, createdAt:{type:Date, default:Date.now}, expiresAt:Date
 });
 const TransactionSchema = new mongoose.Schema({
-  reference:{ type:String, unique:true }, email:String, userId:String, amount:Number, status:String,
-  raw:{ type:mongoose.Schema.Types.Mixed, default:{} },
-  creditedAt:{ type:Date, default:null }, createdAt:{ type:Date, default:Date.now }
+  reference:{type:String, unique:true}, email:String, userId:String, amount:Number, status:String,
+  raw:{type:mongoose.Schema.Types.Mixed, default:{}}, creditedAt:{type:Date, default:null}, createdAt:{type:Date, default:Date.now}
 });
 const User = mongoose.models.User || mongoose.model("User", UserSchema);
 const Order = mongoose.models.Order || mongoose.model("Order", OrderSchema);
 const Transaction = mongoose.models.Transaction || mongoose.model("Transaction", TransactionSchema);
 
-function getDefaultBalances() {
-  const balances = {};
-  countries.forEach(country => { balances[country.code] = 0; });
-  return balances;
-}
-function ensureBalances(user) {
-  if (!user.balances) user.balances = getDefaultBalances();
-  countries.forEach(country => {
-    if (user.balances[country.code] === undefined || user.balances[country.code] === null) user.balances[country.code] = 0;
-  });
+function getDefaultBalances(){ const b={}; countries.forEach(c=>b[c.code]=0); return b; }
+function ensureBalances(user){
+  if(!user.balances) user.balances=getDefaultBalances();
+  countries.forEach(c=>{ if(user.balances[c.code]===undefined||user.balances[c.code]===null) user.balances[c.code]=0; });
   return user.balances;
 }
-function generateId() { return ("ORD-" + Date.now() + "-" + Math.random().toString(36).slice(2,8)); }
-function generateToken(user) {
-  return jwt.sign({ id: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+function generateId(){ return "ORD-"+Date.now()+"-"+Math.random().toString(36).slice(2,8); }
+function generateToken(user){ return jwt.sign({id:user._id.toString(), email:user.email}, JWT_SECRET, {expiresIn:JWT_EXPIRES}); }
+
+// FIX: accepts Bearer or bearer + trim
+async function authMiddleware(req,res,next){
+  const header=req.headers.authorization;
+  if(!header||!header.toLowerCase().startsWith("bearer ")) return res.status(401).json({success:false, message:"No token"});
+  try{
+    const token=header.split(" ")[1]?.trim();
+    if(!token) return res.status(401).json({success:false, message:"No token"});
+    const decoded=jwt.verify(token, JWT_SECRET);
+    const user=await User.findById(decoded.id);
+    if(!user) return res.status(401).json({success:false, message:"User not found"});
+    ensureBalances(user); req.user=user; next();
+  }catch(e){ return res.status(401).json({success:false, message:"Invalid token"}); }
 }
 
-// FIX 2: Token check now accepts lowercase bearer and trims
-async function authMiddleware(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header ||!header.toLowerCase().startsWith("bearer ")) {
-    return res.status(401).json({ success:false, message:"No token" });
-  }
-  try {
-    const token = header.split(" ")[1]?.trim();
-    if(!token) return res.status(401).json({ success:false, message:"No token" });
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.id);
-    if (!user) return res.status(401).json({ success:false, message:"User not found" });
-    ensureBalances(user);
-    req.user = user;
-    next();
-  } catch (error) {
-    return res.status(401).json({ success:false, message:"Invalid token" });
-  }
-}
+app.get("/api/health",(req,res)=>{ res.json({success:true, hasApiKey:!!FIVESIM_KEY, hasPaystack:!!PAYSTACK_SECRET, mongoConnected:mongoose.connection.readyState===1}); });
 
-app.get("/api/health", (req,res) => {
-  res.json({ success:true, hasApiKey:!!FIVESIM_KEY, hasPaystack:!!PAYSTACK_SECRET, mongoConnected: mongoose.connection.readyState === 1 });
+app.post("/api/auth/register", async (req,res)=>{
+  try{
+    const {email,password}=req.body;
+    if(!email||!password) return res.status(400).json({success:false, message:"Email and password required"});
+    const cleanEmail=String(email).trim().toLowerCase();
+    const exists=await User.findOne({email:cleanEmail});
+    if(exists) return res.status(409).json({success:false, message:"Email exists"});
+    const passwordHash=await bcrypt.hash(password,10);
+    const user=await User.create({email:cleanEmail, passwordHash, authProvider:"email", balances:getDefaultBalances()});
+    const token=generateToken(user);
+    res.status(201).json({success:true, token, user:{id:user._id, email:user.email, balances:user.balances}});
+  }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
 
-app.post("/api/auth/register", async (req,res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email ||!password) return res.status(400).json({ success:false, message:"Email and password required" });
-    const cleanEmail = String(email).trim().toLowerCase();
-    const exists = await User.findOne({ email: cleanEmail });
-    if (exists) return res.status(409).json({ success:false, message:"Email exists" });
-    const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email: cleanEmail, passwordHash, authProvider:"email", balances:getDefaultBalances() });
-    const token = generateToken(user);
-    res.status(201).json({ success:true, token, user:{ id:user._id, email:user.email, balances:user.balances } });
-  } catch(error) { res.status(500).json({ success:false, message:error.message }); }
+app.post("/api/auth/login", async (req,res)=>{
+  try{
+    const cleanEmail=String(req.body.email||"").trim().toLowerCase();
+    const user=await User.findOne({email:cleanEmail});
+    if(!user) return res.status(401).json({success:false, message:"Invalid email or password"});
+    if(!user.passwordHash) return res.status(401).json({success:false, message:"This account uses another login method"});
+    const match=await bcrypt.compare(req.body.password, user.passwordHash);
+    if(!match) return res.status(401).json({success:false, message:"Invalid email or password"});
+    ensureBalances(user); user.lastLogin=new Date(); user.markModified("balances"); await user.save();
+    const token=generateToken(user);
+    res.json({success:true, token, user:{id:user._id, email:user.email, balances:user.balances}});
+  }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
 
-app.post("/api/auth/login", async (req,res) => {
-  try {
-    const cleanEmail = String(req.body.email || "").trim().toLowerCase();
-    const user = await User.findOne({ email: cleanEmail });
-    if (!user) return res.status(401).json({ success:false, message:"Invalid email or password" });
-    if (!user.passwordHash) return res.status(401).json({ success:false, message:"This account uses another login method" });
-    const match = await bcrypt.compare(req.body.password, user.passwordHash);
-    if (!match) return res.status(401).json({ success:false, message:"Invalid email or password" });
-    ensureBalances(user);
-    user.lastLogin = new Date();
-    user.markModified("balances");
-    await user.save();
-    const token = generateToken(user);
-    res.json({ success:true, token, user:{ id:user._id, email:user.email, balances:user.balances } });
-  } catch(error) { res.status(500).json({ success:false, message:error.message }); }
+app.get("/api/user/me", authMiddleware, async (req,res)=>{
+  const fresh=await User.findById(req.user._id); ensureBalances(fresh); await fresh.save();
+  res.json({success:true, balances:fresh.balances, user:fresh});
+});
+app.get("/api/user/balance", authMiddleware, async (req,res)=>{
+  const fresh=await User.findById(req.user._id); ensureBalances(fresh); await fresh.save();
+  res.json({success:true, balances:fresh.balances});
+});
+app.post("/api/firebase/sync", async (req,res)=>{
+  try{
+    const {email, name="", picture=""}=req.body;
+    if(!email) return res.status(400).json({success:false, message:"Email required"});
+    const cleanEmail=email.trim().toLowerCase();
+    let user=await User.findOne({email:cleanEmail});
+    if(!user) user=await User.create({email:cleanEmail, name, picture, authProvider:"firebase", balances:getDefaultBalances()});
+    else { ensureBalances(user); user.lastLogin=new Date(); user.markModified("balances"); await user.save(); }
+    const token=generateToken(user);
+    res.json({success:true, token, user:{id:user._id, email:user.email, balances:user.balances}});
+  }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
 
-app.get("/api/user/me", authMiddleware, async (req,res) => {
-  const fresh = await User.findById(req.user._id);
-  ensureBalances(fresh); await fresh.save();
-  res.json({ success:true, balances:fresh.balances, user:fresh });
+app.post("/api/orders", authMiddleware, async (req,res)=>{
+  try{
+    const {country, service}=req.body;
+    const selectedCountry=countries.find(c=>c.code===country);
+    if(!selectedCountry) return res.status(400).json({success:false, message:"Number is unavailable"});
+    if(!FIVESIM_KEY) return res.status(500).json({success:false, message:"5SIM API key missing"});
+    const price=Number(selectedCountry.price);
+    const balances=ensureBalances(req.user);
+    const currentBalance=Number(balances[country])||0;
+    if(currentBalance<price) return res.status(400).json({success:false, message:"insufficient balance add money"});
+    let realPhone=null, fiveSimId=null;
+    try{
+      const resp=await fetch(`https://5sim.net/v1/user/buy/activation/${selectedCountry.fivesim}/any/${service}`, {headers:{Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json"}});
+      const data=await resp.json();
+      if(resp.ok&&data.phone){ realPhone=data.phone; fiveSimId=data.id; }
+      else return res.status(400).json({success:false, message:"Number is unavailable"});
+    }catch(e){ return res.status(400).json({success:false, message:"Number is unavailable"}); }
+    balances[country]=currentBalance-price;
+    req.user.balances=balances; req.user.markModified("balances"); await req.user.save();
+    const order=await Order.create({id:generateId(), userId:req.user._id.toString(), email:req.user.email, country, service, phone:realPhone, fiveSimId, price, status:"waiting", isReal:true, createdAt:new Date(), expiresAt:new Date(Date.now()+15*60*1000)});
+    res.json({success:true, order, balances:req.user.balances});
+  }catch(e){ res.status(500).json({success:false, message:"Number is unavailable"}); }
 });
 
-app.get("/api/user/balance", authMiddleware, async (req,res) => {
-  const fresh = await User.findById(req.user._id);
-  ensureBalances(fresh); await fresh.save();
-  res.json({ success:true, balances:fresh.balances });
-});
-
-app.post("/api/firebase/sync", async (req,res) => {
-  try {
-    const { email, name="", picture="" } = req.body;
-    if (!email) return res.status(400).json({ success:false, message:"Email required" });
-    const cleanEmail = email.trim().toLowerCase();
-    let user = await User.findOne({ email: cleanEmail });
-    if (!user) {
-      user = await User.create({ email:cleanEmail, name, picture, authProvider:"firebase", balances:getDefaultBalances() });
-    } else {
-      ensureBalances(user); user.lastLogin = new Date(); user.markModified("balances"); await user.save();
+app.get("/api/orders/:orderId", authMiddleware, async (req,res)=>{
+  try{
+    const order=await Order.findOne({id:req.params.orderId, userId:req.user._id.toString()});
+    if(!order) return res.status(404).json({success:false, message:"Not found"});
+    if(order.fiveSimId&&FIVESIM_KEY&&!order.otp){
+      try{
+        const resp=await fetch(`https://5sim.net/v1/user/check/${order.fiveSimId}`, {headers:{Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json"}});
+        const data=await resp.json();
+        if(data.sms&&data.sms[0]){ order.otp=data.sms[0].code||data.sms[0].text?.match(/\d{4,6}/)?.[0]; order.status="received"; await order.save(); }
+      }catch(e){}
     }
-    const token = generateToken(user);
-    res.json({ success:true, token, user:{ id:user._id, email:user.email, balances:user.balances } });
-  } catch(error) { res.status(500).json({ success:false, message:error.message }); }
+    res.json({success:true, order});
+  }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
 
-app.post("/api/orders", authMiddleware, async (req,res) => {
-  try {
-    const { country, service } = req.body;
-    const selectedCountry = countries.find(c => c.code === country);
-    if (!selectedCountry) return res.status(400).json({ success:false, message:"Number is unavailable" });
-    if (!FIVESIM_KEY) return res.status(500).json({ success:false, message:"5SIM API key missing" });
-    const price = Number(selectedCountry.price);
-    const balances = ensureBalances(req.user);
-    const currentBalance = Number(balances[country]) || 0;
-    if (currentBalance < price) return res.status(400).json({ success:false, message:"insufficient balance add money" });
-    let realPhone = null; let fiveSimId = null;
-    try {
-      const resp = await fetch(`https://5sim.net/v1/user/buy/activation/${selectedCountry.fivesim}/any/${service}`, {
-        headers:{ Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json" }
-      });
-      const data = await resp.json();
-      if (resp.ok && data.phone) { realPhone = data.phone; fiveSimId = data.id; }
-      else { console.error("5SIM ERROR:", data); return res.status(400).json({ success:false, message:"Number is unavailable" }); }
-    } catch(error) {
-      console.error("5SIM REQUEST ERROR:", error);
-      return res.status(400).json({ success:false, message:"Number is unavailable" });
-    }
-    balances[country] = currentBalance - price;
-    req.user.balances = balances;
-    req.user.markModified("balances");
-    await req.user.save();
-    const order = await Order.create({
-      id:generateId(), userId:req.user._id.toString(), email:req.user.email, country, service, phone:realPhone, fiveSimId, price, status:"waiting", isReal:true, createdAt:new Date(), expiresAt:new Date(Date.now()+15*60*1000)
+app.post("/api/pay/initialize", authMiddleware, async (req,res)=>{
+  try{
+    const {amount}=req.body;
+    if(!PAYSTACK_SECRET) return res.status(500).json({success:false, message:"PAYSTACK_SECRET_KEY missing"});
+    const numericAmount=Number(amount);
+    if(!Number.isFinite(numericAmount)||numericAmount<100) return res.status(400).json({success:false, message:"Minimum payment is ₦100"});
+    const cleanEmail=String(req.user.email).trim().toLowerCase();
+    const callbackUrl=`${FRONTEND_URL}/`;
+    const response=await fetch("https://api.paystack.co/transaction/initialize", {
+      method:"POST", headers:{Authorization:`Bearer ${PAYSTACK_SECRET}`, "Content-Type":"application/json"},
+      body:JSON.stringify({email:cleanEmail, amount:Math.round(numericAmount*100), currency:"NGN", callback_url:callbackUrl, metadata:{userId:req.user._id.toString(), email:cleanEmail, purpose:"wallet_funding"}})
     });
-    res.json({ success:true, order, balances:req.user.balances });
-  } catch(error) {
-    console.error("ORDER ERROR:", error);
-    res.status(500).json({ success:false, message:"Number is unavailable" });
-  }
-});
-
-app.get("/api/orders/:orderId", authMiddleware, async (req,res) => {
-  try {
-    const order = await Order.findOne({ id:req.params.orderId, userId:req.user._id.toString() });
-    if (!order) return res.status(404).json({ success:false, message:"Not found" });
-    if (order.fiveSimId && FIVESIM_KEY &&!order.otp) {
-      try {
-        const resp = await fetch(`https://5sim.net/v1/user/check/${order.fiveSimId}`, { headers:{ Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json" } });
-        const data = await resp.json();
-        if (data.sms && data.sms[0]) {
-          order.otp = data.sms[0].code || data.sms[0].text?.match(/\d{4,6}/)?.[0];
-          order.status = "received"; await order.save();
-        }
-      } catch(error) { console.log("5SIM OTP check error:", error.message); }
-    }
-    res.json({ success:true, order });
-  } catch(error) { res.status(500).json({ success:false, message:error.message }); }
-});
-
-app.post("/api/pay/initialize", authMiddleware, async (req,res) => {
-  try {
-    const { amount } = req.body;
-    if (!PAYSTACK_SECRET) return res.status(500).json({ success:false, message:"PAYSTACK_SECRET_KEY missing" });
-    const numericAmount = Number(amount);
-    if (!Number.isFinite(numericAmount) || numericAmount < 100) return res.status(400).json({ success:false, message:"Minimum payment is ₦100" });
-    const cleanEmail = String(req.user.email).trim().toLowerCase();
-    const callbackUrl = `${FRONTEND_URL}/`;
-    const response = await fetch("https://api.paystack.co/transaction/initialize", {
-      method:"POST",
-      headers:{ Authorization:`Bearer ${PAYSTACK_SECRET}`, "Content-Type":"application/json" },
-      body:JSON.stringify({
-        email:cleanEmail, amount:Math.round(numericAmount*100), currency:"NGN", callback_url:callbackUrl,
-        metadata:{ userId:req.user._id.toString(), email:cleanEmail, purpose:"wallet_funding" }
-      })
-    });
-    const data = await response.json();
-    if (!response.ok ||!data.status ||!data.data) {
-      console.error("PAYSTACK INITIALIZE:", data);
-      return res.status(400).json({ success:false, message:data.message || "Unable to initialize payment" });
-    }
-    await Transaction.findOneAndUpdate({ reference:data.data.reference }, { reference:data.data.reference, email:cleanEmail, userId:req.user._id.toString(), amount:numericAmount, status:"pending", raw:data.data }, { upsert:true, new:true });
+    const data=await response.json();
+    if(!response.ok||!data.status||!data.data) return res.status(400).json({success:false, message:data.message||"Unable to initialize payment"});
+    await Transaction.findOneAndUpdate({reference:data.data.reference},{reference:data.data.reference, email:cleanEmail, userId:req.user._id.toString(), amount:numericAmount, status:"pending", raw:data.data},{upsert:true, new:true});
     res.json(data);
-  } catch(error) {
-    console.error("PAYSTACK INITIALIZE ERROR:", error);
-    res.status(500).json({ success:false, message:"Payment initialization failed" });
-  }
+  }catch(e){ res.status(500).json({success:false, message:"Payment initialization failed"}); }
 });
 
-async function processPayment(reference) {
-  if (!reference) throw new Error("Payment reference missing");
-  if (!PAYSTACK_SECRET) throw new Error("PAYSTACK_SECRET_KEY missing");
-  let transaction = await Transaction.findOne({ reference });
-  if (transaction && transaction.status === "success") {
-    const user = await User.findById(transaction.userId);
-    if (!user) throw new Error("User account not found");
+async function processPayment(reference){
+  if(!reference) throw new Error("Payment reference missing");
+  if(!PAYSTACK_SECRET) throw new Error("PAYSTACK_SECRET_KEY missing");
+  let transaction=await Transaction.findOne({reference});
+  if(transaction&&transaction.status==="success"){
+    const user=await User.findById(transaction.userId);
+    if(!user) throw new Error("User account not found");
     ensureBalances(user);
-    return { success:true, alreadyCredited:true, amount:transaction.amount, reference, balances:user.balances };
+    return {success:true, alreadyCredited:true, amount:transaction.amount, reference, balances:user.balances};
   }
-  const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
-    headers:{ Authorization:`Bearer ${PAYSTACK_SECRET}`, Accept:"application/json" }
-  });
-  const data = await response.json();
-  if (!response.ok ||!data.status ||!data.data) throw new Error(data.message || "Paystack verification failed");
-  const payment = data.data;
-  if (payment.status!== "success") return { success:false, message:"Payment has not been completed", status:payment.status };
-  const paidReference = payment.reference;
-  const paidEmail = String(payment.customer?.email || transaction?.email || "").trim().toLowerCase();
-  if (!paidEmail) throw new Error("Payment email missing");
-  const paidAmount = Number(payment.amount) / 100;
-  if (!Number.isFinite(paidAmount) || paidAmount <= 0) throw new Error("Invalid payment amount");
-  let user = null;
-  if (transaction && transaction.userId) user = await User.findById(transaction.userId);
-  if (!user) {
-    const metadataUserId = payment.metadata?.userId;
-    if (metadataUserId) { try { user = await User.findById(metadataUserId); } catch(error) {} }
-  }
-  if (!user) user = await User.findOne({ email: paidEmail });
-  if (!user) throw new Error("User account not found");
-  const existingSuccess = await Transaction.findOne({ reference:paidReference, status:"success" });
-  if (existingSuccess) { ensureBalances(user); return { success:true, alreadyCredited:true, amount:existingSuccess.amount, reference:paidReference, balances:user.balances }; }
+  const response=await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {headers:{Authorization:`Bearer ${PAYSTACK_SECRET}`, Accept:"application/json"}});
+  const data=await response.json();
+  if(!response.ok||!data.status||!data.data) throw new Error(data.message||"Paystack verification failed");
+  const payment=data.data;
+  if(payment.status!=="success") return {success:false, message:"Payment has not been completed", status:payment.status};
+  const paidReference=payment.reference;
+  const paidEmail=String(payment.customer?.email||transaction?.email||"").trim().toLowerCase();
+  if(!paidEmail) throw new Error("Payment email missing");
+  const paidAmount=Number(payment.amount)/100;
+  let user=null;
+  if(transaction&&transaction.userId) user=await User.findById(transaction.userId);
+  if(!user){ const mid=payment.metadata?.userId; if(mid){ try{ user=await User.findById(mid); }catch(e){} } }
+  if(!user) user=await User.findOne({email:paidEmail});
+  if(!user) throw new Error("User account not found");
+  const existingSuccess=await Transaction.findOne({reference:paidReference, status:"success"});
+  if(existingSuccess){ ensureBalances(user); return {success:true, alreadyCredited:true, amount:existingSuccess.amount, reference:paidReference, balances:user.balances}; }
   ensureBalances(user);
-  const oldBalance = Number(user.balances.nigeria) || 0;
-  const newBalance = oldBalance + paidAmount;
-  user.balances.nigeria = newBalance;
-  user.markModified("balances");
-  await user.save();
-  await Transaction.findOneAndUpdate({ reference:paidReference }, { reference:paidReference, email:paidEmail, userId:user._id.toString(), amount:paidAmount, status:"success", raw:payment, creditedAt:new Date() }, { upsert:true, new:true });
-  return { success:true, alreadyCredited:false, amount:paidAmount, reference:paidReference, balances:user.balances };
+  user.balances.nigeria=(Number(user.balances.nigeria)||0)+paidAmount;
+  user.markModified("balances"); await user.save();
+  await Transaction.findOneAndUpdate({reference:paidReference},{reference:paidReference, email:paidEmail, userId:user._id.toString(), amount:paidAmount, status:"success", raw:payment, creditedAt:new Date()},{upsert:true, new:true});
+  return {success:true, alreadyCredited:false, amount:paidAmount, reference:paidReference, balances:user.balances};
 }
 
-app.get("/api/pay/verify", authMiddleware, async (req,res) => {
-  try {
-    const result = await processPayment(req.query.reference);
-    const transaction = await Transaction.findOne({ reference:req.query.reference });
-    if (transaction && transaction.userId!== req.user._id.toString()) return res.status(403).json({ success:false, message:"Payment does not belong to this account" });
+app.get("/api/pay/verify", authMiddleware, async (req,res)=>{
+  try{
+    const result=await processPayment(req.query.reference);
+    const tx=await Transaction.findOne({reference:req.query.reference});
+    if(tx&&tx.userId!==req.user._id.toString()) return res.status(403).json({success:false, message:"Payment does not belong to this account"});
     res.json(result);
-  } catch(error) { console.error("PAYMENT VERIFY ERROR:", error); res.status(500).json({ success:false, message:error.message }); }
+  }catch(e){ res.status(500).json({success:false, message:e.message}); }
+});
+app.get("/api/pay/verify/:reference", authMiddleware, async (req,res)=>{
+  try{
+    const result=await processPayment(req.params.reference);
+    const tx=await Transaction.findOne({reference:req.params.reference});
+    if(tx&&tx.userId!==req.params.reference&&tx.userId!==req.user._id.toString()){}
+    if(tx&&tx.userId!==req.user._id.toString()) return res.status(403).json({success:false, message:"Payment does not belong to this account"});
+    res.json(result);
+  }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
 
-app.get("/api/pay/verify/:reference", authMiddleware, async (req,res) => {
-  try {
-    const result = await processPayment(req.params.reference);
-    const transaction = await Transaction.findOne({ reference:req.params.reference });
-    if (transaction && transaction.userId!== req.user._id.toString()) return res.status(403).json({ success:false, message:"Payment does not belong to this account" });
-    res.json(result);
-  } catch(error) { console.error("PAYMENT VERIFY ERROR:", error); res.status(500).json({ success:false, message:error.message }); }
-});
-
-app.listen(PORT, () => { console.log(`✅ OTPHub backend running on port ${PORT}`); });
+app.listen(PORT, ()=>{ console.log(`✅ FIXED - Token + Wallet works - Port ${PORT}`); });

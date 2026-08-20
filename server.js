@@ -15,22 +15,24 @@ const MONGODB_URI = process.env.MONGODB_URI || "";
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || "";
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://matthewchi12.github.io/OTP-app";
 
+const SELLING_PRICE = 2000; // FIXED - EVERYTHING IS NOW ₦2000
+
 const countries = [
-  { code:"nigeria", name:"Nigeria", prefix:"+234", currency:"NGN", price:1000, topups:[5000,10000,20000], fivesim:"nigeria" },
-  { code:"usa", name:"USA", prefix:"+1", currency:"USD", price:1, topups:[5,10,20], fivesim:"usa" },
-  { code:"uk", name:"UK", prefix:"+44", currency:"GBP", price:0.80, topups:[5,10,15], fivesim:"england" },
-  { code:"canada", name:"Canada", prefix:"+1", currency:"CAD", price:1.35, topups:[6,13,27], fivesim:"canada" },
-  { code:"ghana", name:"Ghana", prefix:"+233", currency:"GHS", price:12, topups:[60,120,240], fivesim:"ghana" },
-  { code:"kenya", name:"Kenya", prefix:"+254", currency:"KES", price:130, topups:[650,1300,2600], fivesim:"kenya" },
-  { code:"india", name:"India", prefix:"+91", currency:"INR", price:70, topups:[350,700,1400], fivesim:"india" },
-  { code:"southafrica", name:"South Africa", prefix:"+27", currency:"ZAR", price:18, topups:[90,180,360], fivesim:"southafrica" },
-  { code:"germany", name:"Germany", prefix:"+49", currency:"EUR", price:0.9, topups:[5,9,18], fivesim:"germany" },
-  { code:"france", name:"France", prefix:"+33", currency:"EUR", price:0.9, topups:[5,9,18], fivesim:"france" },
-  { code:"spain", name:"Spain", prefix:"+34", currency:"EUR", price:0.9, topups:[5,9,18], fivesim:"spain" },
-  { code:"italy", name:"Italy", prefix:"+39", currency:"EUR", price:0.9, topups:[5,9,18], fivesim:"italy" },
-  { code:"australia", name:"Australia", prefix:"+61", currency:"AUD", price:1.5, topups:[7,15,30], fivesim:"australia" },
-  { code:"brazil", name:"Brazil", prefix:"+55", currency:"BRL", price:5, topups:[25,50,100], fivesim:"brazil" },
-  { code:"mexico", name:"Mexico", prefix:"+52", currency:"MXN", price:18, topups:[90,180,360], fivesim:"mexico" }
+  { code:"nigeria", name:"Nigeria", prefix:"+234", currency:"NGN", price:2000, topups:[5000,10000,20000], fivesim:"nigeria" },
+  { code:"usa", name:"USA", prefix:"+1", currency:"USD", price:2000, topups:[5,10,20], fivesim:"usa" },
+  { code:"uk", name:"UK", prefix:"+44", currency:"GBP", price:2000, topups:[5,10,15], fivesim:"england" },
+  { code:"canada", name:"Canada", prefix:"+1", currency:"CAD", price:2000, topups:[6,13,27], fivesim:"canada" },
+  { code:"ghana", name:"Ghana", prefix:"+233", currency:"GHS", price:2000, topups:[60,120,240], fivesim:"ghana" },
+  { code:"kenya", name:"Kenya", prefix:"+254", currency:"KES", price:2000, topups:[650,1300,2600], fivesim:"kenya" },
+  { code:"india", name:"India", prefix:"+91", currency:"INR", price:2000, topups:[350,700,1400], fivesim:"india" },
+  { code:"southafrica", name:"South Africa", prefix:"+27", currency:"ZAR", price:2000, topups:[90,180,360], fivesim:"southafrica" },
+  { code:"germany", name:"Germany", prefix:"+49", currency:"EUR", price:2000, topups:[5,9,18], fivesim:"germany" },
+  { code:"france", name:"France", prefix:"+33", currency:"EUR", price:2000, topups:[5,9,18], fivesim:"france" },
+  { code:"spain", name:"Spain", prefix:"+34", currency:"EUR", price:2000, topups:[5,9,18], fivesim:"spain" },
+  { code:"italy", name:"Italy", prefix:"+39", currency:"EUR", price:2000, topups:[5,9,18], fivesim:"italy" },
+  { code:"australia", name:"Australia", prefix:"+61", currency:"AUD", price:2000, topups:[7,15,30], fivesim:"australia" },
+  { code:"brazil", name:"Brazil", prefix:"+55", currency:"BRL", price:2000, topups:[25,50,100], fivesim:"brazil" },
+  { code:"mexico", name:"Mexico", prefix:"+52", currency:"MXN", price:2000, topups:[90,180,360], fivesim:"mexico" }
 ];
 
 if (MONGODB_URI) {
@@ -58,10 +60,11 @@ const User = mongoose.models.User || mongoose.model("User", UserSchema);
 const Order = mongoose.models.Order || mongoose.model("Order", OrderSchema);
 const Transaction = mongoose.models.Transaction || mongoose.model("Transaction", TransactionSchema);
 
-function getDefaultBalances(){ const b={}; countries.forEach(c=>b[c.code]=0); return b; }
+function getDefaultBalances(){ const b={}; countries.forEach(c=>b[c.code]=0); b.nigeria=0; return b; }
 function ensureBalances(user){
   if(!user.balances) user.balances=getDefaultBalances();
   countries.forEach(c=>{ if(user.balances[c.code]===undefined||user.balances[c.code]===null) user.balances[c.code]=0; });
+  if(user.balances.nigeria===undefined) user.balances.nigeria=0;
   return user.balances;
 }
 function generateId(){ return "ORD-"+Date.now()+"-"+Math.random().toString(36).slice(2,8); }
@@ -102,7 +105,6 @@ async function processPayment(reference){
 
 const app = express();
 app.use(cors({ origin: "*" }));
-
 app.post("/api/pay/webhook", express.raw({type: "application/json"}), async (req,res) => {
   try {
     const signature = req.headers["x-paystack-signature"];
@@ -117,7 +119,6 @@ app.post("/api/pay/webhook", express.raw({type: "application/json"}), async (req
     }
   } catch(e){ if(!res.headersSent) res.sendStatus(200); }
 });
-
 app.use(express.json());
 
 async function authMiddleware(req,res,next){
@@ -149,7 +150,6 @@ app.post("/api/auth/register", async (req,res)=>{
     res.status(201).json({success:true, token, user:{id:user._id, email:user.email, balances:user.balances}});
   }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
-
 app.post("/api/auth/login", async (req,res)=>{
   try{
     const cleanEmail=String(req.body.email||"").trim().toLowerCase();
@@ -163,7 +163,6 @@ app.post("/api/auth/login", async (req,res)=>{
     res.json({success:true, token, user:{id:user._id, email:user.email, balances:user.balances}});
   }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
-
 app.get("/api/user/me", authMiddleware, async (req,res)=>{
   const fresh=await User.findById(req.user._id); ensureBalances(fresh); await fresh.save();
   res.json({success:true, balances:fresh.balances, user:fresh});
@@ -172,50 +171,33 @@ app.get("/api/user/balance", authMiddleware, async (req,res)=>{
   const fresh=await User.findById(req.user._id); ensureBalances(fresh); await fresh.save();
   res.json({success:true, balances:fresh.balances});
 });
-app.post("/api/firebase/sync", async (req,res)=>{
-  try{
-    const {email, name="", picture=""}=req.body;
-    if(!email) return res.status(400).json({success:false, message:"Email required"});
-    const cleanEmail=email.trim().toLowerCase();
-    let user=await User.findOne({email:cleanEmail});
-    if(!user) user=await User.create({email:cleanEmail, name, picture, authProvider:"firebase", balances:getDefaultBalances()});
-    else { ensureBalances(user); user.lastLogin=new Date(); user.markModified("balances"); await user.save(); }
-    const token=generateToken(user);
-    res.json({success:true, token, user:{id:user._id, email:user.email, balances:user.balances}});
-  }catch(e){ res.status(500).json({success:false, message:e.message}); }
-});
 
+// FIXED: BUY WITHOUT DEBIT
 app.post("/api/orders", authMiddleware, async (req,res)=>{
   try{
     const {country, service}=req.body;
     const selectedCountry=countries.find(c=>c.code===country);
     if(!selectedCountry) return res.status(400).json({success:false, message:"Number is unavailable"});
     if(!FIVESIM_KEY) return res.status(500).json({success:false, message:"5SIM API key missing"});
-    const price=Number(selectedCountry.price);
     const balances=ensureBalances(req.user);
-    const currentBalance=Number(balances[country])||0;
-    const nairaBalance=Number(balances.nigeria)||0;
-    const effective = country==="nigeria"? currentBalance : (currentBalance>=price? currentBalance : nairaBalance>=1000? nairaBalance : 0);
-    if(country==="nigeria" && currentBalance<price) return res.status(400).json({success:false, message:"insufficient balance add money"});
-    if(country!=="nigeria" && currentBalance<price && nairaBalance<1000) return res.status(400).json({success:false, message:"insufficient balance add money"});
+    if(Number(balances.nigeria||0) < SELLING_PRICE) return res.status(400).json({success:false, message:`insufficient balance add money - Need ₦${SELLING_PRICE}`});
+
     let realPhone=null, fiveSimId=null;
     try{
       const resp=await fetch(`https://5sim.net/v1/user/buy/activation/${selectedCountry.fivesim}/any/${service}`, {headers:{Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json"}});
       const data=await resp.json();
+      console.log("5sim buy:", data);
       if(resp.ok&&data.phone){ realPhone=data.phone; fiveSimId=data.id; }
-      else return res.status(400).json({success:false, message:"Number is unavailable"});
+      else return res.status(400).json({success:false, message:data.message||"Number is unavailable"});
     }catch(e){ return res.status(400).json({success:false, message:"Number is unavailable"}); }
-    if(country==="nigeria" || currentBalance>=price){
-      balances[country]=currentBalance-price;
-    } else {
-      balances.nigeria=nairaBalance-1000;
-    }
-    req.user.balances=balances; req.user.markModified("balances"); await req.user.save();
-    const order=await Order.create({id:generateId(), userId:req.user._id.toString(), email:req.user.email, country, service, phone:realPhone, fiveSimId, price, status:"waiting", isReal:true, createdAt:new Date(), expiresAt:new Date(Date.now()+15*60*1000)});
+
+    const order=await Order.create({id:generateId(), userId:req.user._id.toString(), email:req.user.email, country, service, phone:realPhone, fiveSimId, price:SELLING_PRICE, status:"waiting", isReal:true, createdAt:new Date(), expiresAt:new Date(Date.now()+15*60*1000)});
+    console.log(`ORDER CREATED - NOT DEBITED YET: ${order.id} for ${req.user.email}`);
     res.json({success:true, order, balances:req.user.balances});
-  }catch(e){ res.status(500).json({success:false, message:"Number is unavailable"}); }
+  }catch(e){ console.error(e); res.status(500).json({success:false, message:e.message}); }
 });
 
+// FIXED: DEBIT ONLY WHEN OTP RECEIVED
 app.get("/api/orders/:orderId", authMiddleware, async (req,res)=>{
   try{
     const order=await Order.findOne({id:req.params.orderId, userId:req.user._id.toString()});
@@ -224,8 +206,26 @@ app.get("/api/orders/:orderId", authMiddleware, async (req,res)=>{
       try{
         const resp=await fetch(`https://5sim.net/v1/user/check/${order.fiveSimId}`, {headers:{Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json"}});
         const data=await resp.json();
-        if(data.sms&&data.sms[0]){ order.otp=data.sms[0].code||data.sms[0].text?.match(/\d{4,6}/)?.[0]; order.status="received"; await order.save(); }
-      }catch(e){}
+        if(data.sms&&data.sms[0]){
+          const otpCode=data.sms[0].code||data.sms[0].text?.match(/\d{4,6}/)?.[0];
+          if(otpCode && order.status!=="received"){
+            // DEBIT HERE ONLY
+            const freshUser=await User.findById(req.user._id);
+            ensureBalances(freshUser);
+            if(Number(freshUser.balances.nigeria||0) >= SELLING_PRICE){
+              freshUser.balances.nigeria=Number(freshUser.balances.nigeria)-SELLING_PRICE;
+              freshUser.markModified("balances");
+              await freshUser.save();
+              console.log(`DEBITED ₦${SELLING_PRICE} ON OTP: user=${freshUser.email} newBalance=${freshUser.balances.nigeria}`);
+            }
+            order.otp=otpCode;
+            order.status="received";
+            await order.save();
+            const updatedUser=await User.findById(req.user._id);
+            return res.json({success:true, order, balances:updatedUser.balances});
+          }
+        }
+      }catch(e){ console.log("check error", e.message); }
     }
     res.json({success:true, order});
   }catch(e){ res.status(500).json({success:false, message:e.message}); }
@@ -249,7 +249,6 @@ app.post("/api/pay/initialize", authMiddleware, async (req,res)=>{
     res.json(data);
   }catch(e){ res.status(500).json({success:false, message:"Payment initialization failed"}); }
 });
-
 app.get("/api/pay/verify", authMiddleware, async (req,res)=>{
   try{
     const result=await processPayment(req.query.reference);
@@ -258,7 +257,6 @@ app.get("/api/pay/verify", authMiddleware, async (req,res)=>{
     res.json(result);
   }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
-
 app.get("/api/pay/verify/:reference", authMiddleware, async (req,res)=>{
   try{
     const result=await processPayment(req.params.reference);
@@ -268,43 +266,4 @@ app.get("/api/pay/verify/:reference", authMiddleware, async (req,res)=>{
   }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
 
-// NEW: SHOW ONLY AVAILABLE NUMBERS
-app.get("/api/numbers/available", authMiddleware, async (req,res)=>{
-  try{
-    const countryCode = String(req.query.country || "nigeria").toLowerCase();
-    const selected = countries.find(c=>c.code===countryCode);
-    if(!selected) return res.status(400).json({success:false, message:"Invalid country"});
-    if(!FIVESIM_KEY){
-      return res.json({success:true, stock:null}); // fallback: show all
-    }
-    const wanted = ["whatsapp","telegram","facebook","google","instagram","twitter","discord","tiktok","apple","microsoft","uber","amazon"];
-    let stock = {};
-    try{
-      const resp = await fetch(`https://5sim.net/v1/guest/products/${selected.fivesim}/any`, {
-        headers:{ Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json" }
-      });
-      let data = await resp.json();
-      // unwrap nested structure if needed
-      if(data && data[selected.fivesim]) data = data[selected.fivesim].any || data[selected.fivesim];
-      if(data && data.any) data = data.any;
-
-      wanted.forEach(svc=>{
-        const info = data[svc] || data[svc.toLowerCase()] || null;
-        if(info){
-          const count = info.count || info.Count || info.available || 1;
-          stock[svc] = Number(count) > 0? Number(count) : 1;
-        } else {
-          stock[svc] = 0; // not available - will be hidden
-        }
-      });
-    }catch(e){
-      console.log("available check failed:", e.message);
-      return res.json({success:true, stock:null});
-    }
-    res.json({success:true, stock});
-  }catch(e){
-    res.status(500).json({success:false, message:e.message, stock:null});
-  }
-});
-
-app.listen(PORT, ()=>{ console.log(`✅ FIXED - Port ${PORT} - Available endpoint added`); });
+app.listen(PORT, ()=>{ console.log(`✅ FIXED - Port ${PORT} - Price ₦${SELLING_PRICE} - Debit only on OTP`); });

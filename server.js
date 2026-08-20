@@ -181,7 +181,9 @@ if (MONGODB_URI) {
   mongoose
     .connect(MONGODB_URI)
     .then(() => console.log("✅ MongoDB Connected"))
-    .catch(err => console.log("❌ MongoDB Error:", err.message));
+    .catch(err =>
+      console.log("❌ MongoDB Error:", err.message)
+    );
 }
 
 
@@ -331,7 +333,7 @@ function getDefaultBalances() {
   const balances = {};
 
   countries.forEach(country => {
-    balances[country.code] = country.topups[1];
+    balances[country.code] = 0;
   });
 
   return balances;
@@ -386,13 +388,19 @@ async function authMiddleware(req, res, next) {
 
   try {
 
-    const token = header.split(" ")[1];
+    const token =
+      header.split(" ")[1];
 
     const decoded =
-      jwt.verify(token, JWT_SECRET);
+      jwt.verify(
+        token,
+        JWT_SECRET
+      );
 
     const user =
-      await User.findById(decoded.id);
+      await User.findById(
+        decoded.id
+      );
 
     if (!user) {
 
@@ -412,7 +420,9 @@ async function authMiddleware(req, res, next) {
       success: false,
       message: "Invalid token"
     });
+
   }
+
 }
 
 
@@ -420,169 +430,250 @@ async function authMiddleware(req, res, next) {
 // HEALTH
 // ===============================
 
-app.get("/api/health", (req, res) => {
+app.get(
+  "/api/health",
+  (req, res) => {
 
-  res.json({
-    success: true,
-    hasApiKey: !!FIVESIM_KEY,
-    hasPaystack: !!PAYSTACK_SECRET,
-    mongoConnected:
-      mongoose.connection.readyState === 1
-  });
+    res.json({
+      success: true,
 
-});
+      hasApiKey:
+        !!FIVESIM_KEY,
+
+      hasPaystack:
+        !!PAYSTACK_SECRET,
+
+      mongoConnected:
+        mongoose.connection.readyState === 1
+    });
+
+  }
+);
 
 
 // ===============================
 // AUTH REGISTER
 // ===============================
 
-app.post("/api/auth/register", async (req, res) => {
+app.post(
+  "/api/auth/register",
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      email,
-      password
-    } = req.body;
+      const {
+        email,
+        password
+      } = req.body;
 
-    if (!email || !password) {
+      if (!email || !password) {
 
-      return res.status(400).json({
-        success: false,
-        message:
-          "Email and password required"
-      });
-    }
+        return res.status(400).json({
+          success: false,
+          message:
+            "Email and password required"
+        });
 
-    const cleanEmail =
-      email.trim().toLowerCase();
-
-    const exists =
-      await User.findOne({
-        email: cleanEmail
-      });
-
-    if (exists) {
-
-      return res.status(409).json({
-        success: false,
-        message: "Email exists"
-      });
-    }
-
-    const passwordHash =
-      await bcrypt.hash(password, 10);
-
-    const user =
-      await User.create({
-        email: cleanEmail,
-        passwordHash,
-        authProvider: "email",
-        balances: getDefaultBalances()
-      });
-
-    const token =
-      generateToken(user);
-
-    res.status(201).json({
-      success: true,
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        balances: user.balances
       }
-    });
 
-  } catch (error) {
+      const cleanEmail =
+        email
+          .trim()
+          .toLowerCase();
 
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+      const exists =
+        await User.findOne({
+          email:
+            cleanEmail
+        });
+
+      if (exists) {
+
+        return res.status(409).json({
+          success: false,
+          message:
+            "Email exists"
+        });
+
+      }
+
+      const passwordHash =
+        await bcrypt.hash(
+          password,
+          10
+        );
+
+      const user =
+        await User.create({
+
+          email:
+            cleanEmail,
+
+          passwordHash,
+
+          authProvider:
+            "email",
+
+          balances:
+            getDefaultBalances()
+
+        });
+
+      const token =
+        generateToken(
+          user
+        );
+
+      res.status(201).json({
+
+        success: true,
+
+        token,
+
+        user: {
+          id:
+            user._id,
+
+          email:
+            user.email,
+
+          balances:
+            user.balances
+        }
+
+      });
+
+    } catch (error) {
+
+      res.status(500).json({
+
+        success: false,
+
+        message:
+          error.message
+
+      });
+
+    }
+
   }
-
-});
+);
 
 
 // ===============================
 // AUTH LOGIN
 // ===============================
 
-app.post("/api/auth/login", async (req, res) => {
+app.post(
+  "/api/auth/login",
+  async (req, res) => {
 
-  try {
+    try {
 
-    const cleanEmail =
-      String(req.body.email || "")
-        .trim()
-        .toLowerCase();
+      const cleanEmail =
+        String(
+          req.body.email || ""
+        )
+          .trim()
+          .toLowerCase();
 
-    const user =
-      await User.findOne({
-        email: cleanEmail
-      });
+      const user =
+        await User.findOne({
+          email:
+            cleanEmail
+        });
 
-    if (!user) {
+      if (!user) {
 
-      return res.status(401).json({
-        success: false,
-        message:
-          "Invalid email or password"
-      });
-    }
+        return res.status(401).json({
 
-    if (!user.passwordHash) {
+          success: false,
 
-      return res.status(401).json({
-        success: false,
-        message:
-          "This account uses Firebase login"
-      });
-    }
+          message:
+            "Invalid email or password"
 
-    const match =
-      await bcrypt.compare(
-        req.body.password,
-        user.passwordHash
-      );
+        });
 
-    if (!match) {
-
-      return res.status(401).json({
-        success: false,
-        message:
-          "Invalid email or password"
-      });
-    }
-
-    user.lastLogin = new Date();
-
-    await user.save();
-
-    const token =
-      generateToken(user);
-
-    res.json({
-      success: true,
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        balances: user.balances
       }
-    });
 
-  } catch (error) {
+      if (!user.passwordHash) {
 
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+        return res.status(401).json({
+
+          success: false,
+
+          message:
+            "This account uses Firebase login"
+
+        });
+
+      }
+
+      const match =
+        await bcrypt.compare(
+          req.body.password,
+          user.passwordHash
+        );
+
+      if (!match) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          message:
+            "Invalid email or password"
+
+        });
+
+      }
+
+      user.lastLogin =
+        new Date();
+
+      await user.save();
+
+      const token =
+        generateToken(
+          user
+        );
+
+      res.json({
+
+        success: true,
+
+        token,
+
+        user: {
+
+          id:
+            user._id,
+
+          email:
+            user.email,
+
+          balances:
+            user.balances
+
+        }
+
+      });
+
+    } catch (error) {
+
+      res.status(500).json({
+
+        success: false,
+
+        message:
+          error.message
+
+      });
+
+    }
+
   }
-
-});
+);
 
 
 // ===============================
@@ -595,12 +686,20 @@ app.get(
   async (req, res) => {
 
     const fresh =
-      await User.findById(req.user._id);
+      await User.findById(
+        req.user._id
+      );
 
     res.json({
+
       success: true,
-      balances: fresh.balances,
-      user: fresh
+
+      balances:
+        fresh.balances,
+
+      user:
+        fresh
+
     });
 
   }
@@ -613,11 +712,17 @@ app.get(
   async (req, res) => {
 
     const fresh =
-      await User.findById(req.user._id);
+      await User.findById(
+        req.user._id
+      );
 
     res.json({
+
       success: true,
-      balances: fresh.balances
+
+      balances:
+        fresh.balances
+
     });
 
   }
@@ -627,85 +732,124 @@ app.get(
 // ===============================
 // FIREBASE USER SYNC
 // ===============================
-//
-// Your frontend uses Firebase.
-// This creates/finds the matching
-// MongoDB user by email.
-//
 
-app.post("/api/firebase/sync", async (req, res) => {
+app.post(
+  "/api/firebase/sync",
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      email,
-      name = "",
-      picture = ""
-    } = req.body;
+      const {
+        email,
+        name = "",
+        picture = ""
+      } = req.body;
 
-    if (!email) {
+      if (!email) {
 
-      return res.status(400).json({
-        success: false,
-        message: "Email required"
-      });
-    }
+        return res.status(400).json({
 
-    const cleanEmail =
-      email.trim().toLowerCase();
+          success: false,
 
-    let user =
-      await User.findOne({
-        email: cleanEmail
-      });
+          message:
+            "Email required"
 
-    if (!user) {
-
-      user =
-        await User.create({
-          email: cleanEmail,
-          name,
-          picture,
-          authProvider: "firebase",
-          balances: getDefaultBalances()
         });
 
-    } else {
-
-      user.lastLogin = new Date();
-
-      if (!user.balances) {
-        user.balances =
-          getDefaultBalances();
-
-        user.markModified("balances");
       }
 
-      await user.save();
+      const cleanEmail =
+        email
+          .trim()
+          .toLowerCase();
+
+      let user =
+        await User.findOne({
+          email:
+            cleanEmail
+        });
+
+      if (!user) {
+
+        user =
+          await User.create({
+
+            email:
+              cleanEmail,
+
+            name,
+
+            picture,
+
+            authProvider:
+              "firebase",
+
+            balances:
+              getDefaultBalances()
+
+          });
+
+      } else {
+
+        user.lastLogin =
+          new Date();
+
+        if (!user.balances) {
+
+          user.balances =
+            getDefaultBalances();
+
+          user.markModified(
+            "balances"
+          );
+
+        }
+
+        await user.save();
+
+      }
+
+      const token =
+        generateToken(
+          user
+        );
+
+      res.json({
+
+        success: true,
+
+        token,
+
+        user: {
+
+          id:
+            user._id,
+
+          email:
+            user.email,
+
+          balances:
+            user.balances
+
+        }
+
+      });
+
+    } catch (error) {
+
+      res.status(500).json({
+
+        success: false,
+
+        message:
+          error.message
+
+      });
+
     }
 
-    const token =
-      generateToken(user);
-
-    res.json({
-      success: true,
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        balances: user.balances
-      }
-    });
-
-  } catch (error) {
-
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
   }
-
-});
+);
 
 
 // ===============================
@@ -726,25 +870,34 @@ app.post(
 
       const selectedCountry =
         countries.find(
-          c => c.code === country
+          c =>
+            c.code === country
         );
 
       if (!selectedCountry) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "Number is unavailable"
+
         });
+
       }
 
       if (!FIVESIM_KEY) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "Number is unavailable"
+
         });
+
       }
 
       const price =
@@ -755,33 +908,49 @@ app.post(
         getDefaultBalances();
 
       if (
-        (Number(userBalances[country]) || 0)
-        < price
+        (Number(
+          userBalances[country]
+        ) || 0) < price
       ) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "insufficient balance add money"
+
         });
+
       }
 
-      let realPhone = null;
-      let fiveSimId = null;
+      let realPhone =
+        null;
+
+      let fiveSimId =
+        null;
 
       try {
 
         const resp =
           await fetch(
+
             `https://5sim.net/v1/user/buy/activation/${selectedCountry.fivesim}/any/${service}`,
+
             {
+
               headers: {
+
                 Authorization:
                   `Bearer ${FIVESIM_KEY}`,
+
                 Accept:
                   "application/json"
+
               }
+
             }
+
           );
 
         const data =
@@ -801,22 +970,31 @@ app.post(
         } else {
 
           return res.status(400).json({
+
             success: false,
+
             message:
               "Number is unavailable"
+
           });
+
         }
 
       } catch (error) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "Number is unavailable"
+
         });
+
       }
 
-      userBalances[country] -= price;
+      userBalances[country] -=
+        price;
 
       req.user.balances =
         userBalances;
@@ -830,7 +1008,8 @@ app.post(
       const order =
         await Order.create({
 
-          id: generateId(),
+          id:
+            generateId(),
 
           userId:
             req.user._id.toString(),
@@ -863,6 +1042,7 @@ app.post(
               Date.now() +
               15 * 60 * 1000
             )
+
         });
 
       const freshUser =
@@ -871,19 +1051,27 @@ app.post(
         );
 
       res.json({
+
         success: true,
+
         order,
+
         balances:
           freshUser.balances
+
       });
 
     } catch (error) {
 
       res.status(500).json({
+
         success: false,
+
         message:
           "Number is unavailable"
+
       });
+
     }
 
   }
@@ -903,18 +1091,26 @@ app.get(
 
       const order =
         await Order.findOne({
-          id: req.params.orderId,
+
+          id:
+            req.params.orderId,
+
           userId:
             req.user._id.toString()
+
         });
 
       if (!order) {
 
         return res.status(404).json({
+
           success: false,
+
           message:
             "Not found"
+
         });
+
       }
 
       if (
@@ -927,15 +1123,23 @@ app.get(
 
           const resp =
             await fetch(
+
               `https://5sim.net/v1/user/check/${order.fiveSimId}`,
+
               {
+
                 headers: {
+
                   Authorization:
                     `Bearer ${FIVESIM_KEY}`,
+
                   Accept:
                     "application/json"
+
                 }
+
               }
+
             );
 
           const data =
@@ -949,28 +1153,40 @@ app.get(
             order.otp =
               data.sms[0].code ||
               data.sms[0].text
-                ?.match(/\d{4,6}/)?.[0];
+                ?.match(
+                  /\d{4,6}/
+                )?.[0];
 
             order.status =
               "received";
 
             await order.save();
+
           }
 
         } catch (error) {}
+
       }
 
       res.json({
+
         success: true,
+
         order
+
       });
 
     } catch (error) {
 
       res.status(500).json({
+
         success: false,
-        message: error.message
+
+        message:
+          error.message
+
       });
+
     }
 
   }
@@ -982,7 +1198,10 @@ app.get(
 // =====================================================
 
 
-// Create transaction
+// ===============================
+// CREATE TRANSACTION
+// ===============================
+
 app.post(
   "/api/pay/initialize",
   async (req, res) => {
@@ -997,96 +1216,132 @@ app.post(
       if (!PAYSTACK_SECRET) {
 
         return res.status(500).json({
+
           success: false,
+
           message:
             "PAYSTACK_SECRET_KEY missing"
+
         });
+
       }
 
       if (!email) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "Email required"
+
         });
+
       }
 
       const numericAmount =
         Number(amount);
 
       if (
-        !Number.isFinite(numericAmount) ||
+        !Number.isFinite(
+          numericAmount
+        ) ||
         numericAmount < 100
       ) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             "Minimum payment is ₦100"
+
         });
+
       }
 
       const cleanEmail =
-        email.trim().toLowerCase();
+        email
+          .trim()
+          .toLowerCase();
 
-      // Make sure MongoDB user exists
       let user =
         await User.findOne({
-          email: cleanEmail
+
+          email:
+            cleanEmail
+
         });
 
       if (!user) {
 
         user =
           await User.create({
-            email: cleanEmail,
-            authProvider: "firebase",
+
+            email:
+              cleanEmail,
+
+            authProvider:
+              "firebase",
+
             balances:
               getDefaultBalances()
+
           });
+
       }
 
       const response =
         await fetch(
+
           "https://api.paystack.co/transaction/initialize",
+
           {
-            method: "POST",
+
+            method:
+              "POST",
 
             headers: {
+
               Authorization:
                 `Bearer ${PAYSTACK_SECRET}`,
 
               "Content-Type":
                 "application/json"
+
             },
 
-            body: JSON.stringify({
-
-              email:
-                cleanEmail,
-
-              amount:
-                Math.round(
-                  numericAmount * 100
-                ),
-
-              callback_url:
-                `${FRONTEND_URL}/payment-success.html`,
-
-              metadata: {
-                userId:
-                  user._id.toString(),
+            body:
+              JSON.stringify({
 
                 email:
                   cleanEmail,
 
-                purpose:
-                  "wallet_funding"
-              }
+                amount:
+                  Math.round(
+                    numericAmount * 100
+                  ),
 
-            })
+                callback_url:
+                  `${FRONTEND_URL}/payment-success.html`,
+
+                metadata: {
+
+                  userId:
+                    user._id.toString(),
+
+                  email:
+                    cleanEmail,
+
+                  purpose:
+                    "wallet_funding"
+
+                }
+
+              })
+
           }
+
         );
 
       const data =
@@ -1099,11 +1354,15 @@ app.post(
       ) {
 
         return res.status(400).json({
+
           success: false,
+
           message:
             data.message ||
             "Unable to initialize payment"
+
         });
+
       }
 
       await Transaction.create({
@@ -1125,9 +1384,12 @@ app.post(
 
         raw:
           data.data
+
       });
 
-      res.json(data);
+      res.json(
+        data
+      );
 
     } catch (error) {
 
@@ -1137,10 +1399,14 @@ app.post(
       );
 
       res.status(500).json({
+
         success: false,
+
         message:
           "Payment initialization failed"
+
       });
+
     }
 
   }
@@ -1160,6 +1426,7 @@ async function processPayment(
     throw new Error(
       "Payment reference missing"
     );
+
   }
 
   if (!PAYSTACK_SECRET) {
@@ -1167,15 +1434,16 @@ async function processPayment(
     throw new Error(
       "PAYSTACK_SECRET_KEY missing"
     );
+
   }
 
-  // Find transaction first
   let transaction =
     await Transaction.findOne({
+
       reference
+
     });
 
-  // Already credited
   if (
     transaction &&
     transaction.status ===
@@ -1183,27 +1451,40 @@ async function processPayment(
   ) {
 
     return {
+
       success: true,
-      alreadyCredited: true,
+
+      alreadyCredited:
+        true,
+
       amount:
         transaction.amount,
+
       reference
+
     };
+
   }
 
-
-  // Verify directly with Paystack
   const response =
     await fetch(
+
       `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+
       {
+
         headers: {
+
           Authorization:
             `Bearer ${PAYSTACK_SECRET}`,
+
           Accept:
             "application/json"
+
         }
+
       }
+
     );
 
   const data =
@@ -1216,15 +1497,16 @@ async function processPayment(
   ) {
 
     throw new Error(
+
       data.message ||
       "Paystack verification failed"
-    );
-  }
 
+    );
+
+  }
 
   const payment =
     data.data;
-
 
   if (
     payment.status !==
@@ -1232,53 +1514,61 @@ async function processPayment(
   ) {
 
     return {
+
       success: false,
+
       message:
         "Payment has not been completed",
+
       status:
         payment.status
-    };
-  }
 
+    };
+
+  }
 
   const paidReference =
     payment.reference;
 
   const paidEmail =
     String(
+
       payment.customer?.email ||
       transaction?.email ||
       ""
+
     )
       .trim()
       .toLowerCase();
-
 
   if (!paidEmail) {
 
     throw new Error(
       "Payment email missing"
     );
+
   }
 
-
   const paidAmount =
-    Number(payment.amount) / 100;
-
+    Number(
+      payment.amount
+    ) / 100;
 
   if (
-    !Number.isFinite(paidAmount) ||
+    !Number.isFinite(
+      paidAmount
+    ) ||
     paidAmount <= 0
   ) {
 
     throw new Error(
       "Invalid payment amount"
     );
+
   }
 
-
-  // Get user from metadata first
-  let user = null;
+  let user =
+    null;
 
   const metadataUserId =
     payment.metadata?.userId;
@@ -1293,73 +1583,75 @@ async function processPayment(
         );
 
     } catch (error) {}
+
   }
 
-
-  // Fallback to email
   if (!user) {
 
     user =
       await User.findOne({
+
         email:
           paidEmail
-      });
-  }
 
+      });
+
+  }
 
   if (!user) {
 
     throw new Error(
       "User account not found"
     );
+
   }
 
-
-  // Check transaction one more time
   const existingSuccess =
     await Transaction.findOne({
+
       reference:
         paidReference,
+
       status:
         "success"
+
     });
 
   if (existingSuccess) {
 
     return {
+
       success: true,
-      alreadyCredited: true,
+
+      alreadyCredited:
+        true,
+
       amount:
         existingSuccess.amount,
+
       reference:
         paidReference
+
     };
+
   }
 
-
-  // Ensure balances exist
   user.balances =
     user.balances ||
     getDefaultBalances();
 
-
-  // CREDIT WALLET
   user.balances.nigeria =
     (Number(
       user.balances.nigeria
     ) || 0) +
     paidAmount;
 
-
   user.markModified(
     "balances"
   );
 
-
   await user.save();
 
-
-  // Save successful transaction
   await Transaction.findOneAndUpdate(
 
     {
@@ -1368,6 +1660,7 @@ async function processPayment(
     },
 
     {
+
       reference:
         paidReference,
 
@@ -1388,15 +1681,20 @@ async function processPayment(
 
       creditedAt:
         new Date()
+
     },
 
     {
-      upsert: true,
-      new: true
+
+      upsert:
+        true,
+
+      new:
+        true
+
     }
 
   );
-
 
   return {
 
@@ -1414,6 +1712,7 @@ async function processPayment(
 
     balances:
       user.balances
+
   };
 
 }
@@ -1434,7 +1733,9 @@ app.get(
           req.query.reference
         );
 
-      res.json(result);
+      res.json(
+        result
+      );
 
     } catch (error) {
 
@@ -1444,10 +1745,14 @@ app.get(
       );
 
       res.status(500).json({
+
         success: false,
+
         message:
           error.message
+
       });
+
     }
 
   }
@@ -1465,7 +1770,9 @@ app.get(
           req.params.reference
         );
 
-      res.json(result);
+      res.json(
+        result
+      );
 
     } catch (error) {
 
@@ -1475,10 +1782,14 @@ app.get(
       );
 
       res.status(500).json({
+
         success: false,
+
         message:
           error.message
+
       });
+
     }
 
   }
@@ -1502,9 +1813,11 @@ app.post(
 
       if (!signature) {
 
-        return res.sendStatus(401);
-      }
+        return res.sendStatus(
+          401
+        );
 
+      }
 
       const expectedSignature =
         crypto
@@ -1513,19 +1826,24 @@ app.post(
             PAYSTACK_SECRET
           )
           .update(
-            JSON.stringify(req.body)
+            JSON.stringify(
+              req.body
+            )
           )
-          .digest("hex");
-
+          .digest(
+            "hex"
+          );
 
       if (
         signature !==
         expectedSignature
       ) {
 
-        return res.sendStatus(401);
-      }
+        return res.sendStatus(
+          401
+        );
 
+      }
 
       if (
         req.body.event ===
@@ -1549,13 +1867,16 @@ app.post(
               "WEBHOOK PAYMENT ERROR:",
               error.message
             );
+
           }
 
         }
+
       }
 
-
-      return res.sendStatus(200);
+      return res.sendStatus(
+        200
+      );
 
     } catch (error) {
 
@@ -1564,7 +1885,10 @@ app.post(
         error
       );
 
-      return res.sendStatus(200);
+      return res.sendStatus(
+        200
+      );
+
     }
 
   }

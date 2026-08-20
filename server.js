@@ -14,7 +14,7 @@ const FIVESIM_KEY = process.env.FIVESIM_API_KEY || process.env.FIVESIM_KEY || ""
 const MONGODB_URI = process.env.MONGODB_URI || "";
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || "";
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://matthewchi12.github.io/OTP-app";
- 
+
 const countries = [
   { code:"nigeria", name:"Nigeria", prefix:"+234", currency:"NGN", price:1000, topups:[5000,10000,20000], fivesim:"nigeria" },
   { code:"usa", name:"USA", prefix:"+1", currency:"USD", price:1, topups:[5,10,20], fivesim:"usa" },
@@ -103,7 +103,6 @@ async function processPayment(reference){
 const app = express();
 app.use(cors({ origin: "*" }));
 
-// Webhook must be BEFORE json
 app.post("/api/pay/webhook", express.raw({type: "application/json"}), async (req,res) => {
   try {
     const signature = req.headers["x-paystack-signature"];
@@ -269,4 +268,43 @@ app.get("/api/pay/verify/:reference", authMiddleware, async (req,res)=>{
   }catch(e){ res.status(500).json({success:false, message:e.message}); }
 });
 
-app.listen(PORT, ()=>{ console.log(`✅ FIXED - Port ${PORT}`); });
+// NEW: SHOW ONLY AVAILABLE NUMBERS
+app.get("/api/numbers/available", authMiddleware, async (req,res)=>{
+  try{
+    const countryCode = String(req.query.country || "nigeria").toLowerCase();
+    const selected = countries.find(c=>c.code===countryCode);
+    if(!selected) return res.status(400).json({success:false, message:"Invalid country"});
+    if(!FIVESIM_KEY){
+      return res.json({success:true, stock:null}); // fallback: show all
+    }
+    const wanted = ["whatsapp","telegram","facebook","google","instagram","twitter","discord","tiktok","apple","microsoft","uber","amazon"];
+    let stock = {};
+    try{
+      const resp = await fetch(`https://5sim.net/v1/guest/products/${selected.fivesim}/any`, {
+        headers:{ Authorization:`Bearer ${FIVESIM_KEY}`, Accept:"application/json" }
+      });
+      let data = await resp.json();
+      // unwrap nested structure if needed
+      if(data && data[selected.fivesim]) data = data[selected.fivesim].any || data[selected.fivesim];
+      if(data && data.any) data = data.any;
+
+      wanted.forEach(svc=>{
+        const info = data[svc] || data[svc.toLowerCase()] || null;
+        if(info){
+          const count = info.count || info.Count || info.available || 1;
+          stock[svc] = Number(count) > 0? Number(count) : 1;
+        } else {
+          stock[svc] = 0; // not available - will be hidden
+        }
+      });
+    }catch(e){
+      console.log("available check failed:", e.message);
+      return res.json({success:true, stock:null});
+    }
+    res.json({success:true, stock});
+  }catch(e){
+    res.status(500).json({success:false, message:e.message, stock:null});
+  }
+});
+
+app.listen(PORT, ()=>{ console.log(`✅ FIXED - Port ${PORT} - Available endpoint added`); });

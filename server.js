@@ -7,15 +7,14 @@ const mongoose = require("mongoose");
 const crypto = require("crypto");
 
 dotenv.config();
-
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
 const JWT_EXPIRES = process.env.JWT_EXPIRES || "30d";
 const FIVESIM_KEY = process.env.FIVESIM_API_KEY || process.env.FIVESIM_KEY || "";
 const MONGODB_URI = process.env.MONGODB_URI || "";
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || "";
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://matthewchi12.github.io";
-
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://matthewchi12.github.io/OTP-app";
+ 
 const countries = [
   { code:"nigeria", name:"Nigeria", prefix:"+234", currency:"NGN", price:1000, topups:[5000,10000,20000], fivesim:"nigeria" },
   { code:"usa", name:"USA", prefix:"+1", currency:"USD", price:1, topups:[5,10,20], fivesim:"usa" },
